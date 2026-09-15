@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { BOOKING_STATUS_LABEL, VEHICLE_LABEL } from "@/lib/constants";
+import { DashboardCharts, type DayPoint, type StatusPoint, type VehiclePoint } from "./dashboard-charts";
 
 async function getStats() {
   const [totalBookings, activeBookings, totalCustomers, totalRiders, onlineRiders, revenueAgg] =
@@ -21,6 +23,57 @@ async function getStats() {
   };
 }
 
+async function getChartData() {
+  const since = new Date();
+  since.setDate(since.getDate() - 13);
+  since.setHours(0, 0, 0, 0);
+
+  const [recentBookings, statusGroups, vehicleGroups] = await Promise.all([
+    db.booking.findMany({
+      where: { createdAt: { gte: since } },
+      select: { createdAt: true, status: true, totalFare: true },
+    }),
+    db.booking.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.booking.groupBy({ by: ["vehicleClass"], _count: { _all: true } }),
+  ]);
+
+  const days: DayPoint[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    days.push({
+      date: key,
+      label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      bookings: 0,
+      revenue: 0,
+    });
+  }
+  const dayIndex = new Map(days.map((d, i) => [d.date, i]));
+
+  for (const b of recentBookings) {
+    const key = b.createdAt.toISOString().slice(0, 10);
+    const idx = dayIndex.get(key);
+    if (idx === undefined) continue;
+    days[idx].bookings += 1;
+    if (b.status === "DELIVERED") days[idx].revenue += b.totalFare;
+  }
+
+  const statusBreakdown: StatusPoint[] = statusGroups.map((g) => ({
+    status: g.status,
+    label: BOOKING_STATUS_LABEL[g.status] ?? g.status,
+    count: g._count._all,
+  }));
+
+  const vehicleBreakdown: VehiclePoint[] = vehicleGroups.map((g) => ({
+    vehicleClass: g.vehicleClass,
+    label: VEHICLE_LABEL[g.vehicleClass] ?? g.vehicleClass,
+    count: g._count._all,
+  }));
+
+  return { days, statusBreakdown, vehicleBreakdown };
+}
+
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card" style={{ padding: 20 }}>
@@ -31,7 +84,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 export default async function OverviewPage() {
-  const stats = await getStats();
+  const [stats, chartData] = await Promise.all([getStats(), getChartData()]);
 
   return (
     <div>
@@ -44,6 +97,12 @@ export default async function OverviewPage() {
         <StatCard label="Riders" value={stats.totalRiders} />
         <StatCard label="Riders online now" value={stats.onlineRiders} />
       </div>
+
+      <DashboardCharts
+        days={chartData.days}
+        statusBreakdown={chartData.statusBreakdown}
+        vehicleBreakdown={chartData.vehicleBreakdown}
+      />
     </div>
   );
 }
