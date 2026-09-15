@@ -78,7 +78,7 @@ export default async function BookingsPage({
                   {b.pickupLabel} → {b.dropoffLabel}
                 </td>
                 <td><StatusBadge status={b.status} /></td>
-                <td>${b.totalFare.toFixed(2)}</td>
+                <td>₱{b.totalFare.toFixed(2)}</td>
                 <td>
                   <Link href={`/dashboard/bookings/${b.id}`} className="btn" style={{ padding: "5px 12px", fontSize: 13 }}>
                     View

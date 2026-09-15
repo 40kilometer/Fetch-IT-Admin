@@ -39,7 +39,7 @@ export default async function OverviewPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <StatCard label="Total bookings" value={stats.totalBookings} />
         <StatCard label="Active bookings" value={stats.activeBookings} />
-        <StatCard label="Total revenue" value={`$${stats.revenue.toFixed(2)}`} />
+        <StatCard label="Total revenue" value={`₱${stats.revenue.toFixed(2)}`} />
         <StatCard label="Customers" value={stats.totalCustomers} />
         <StatCard label="Riders" value={stats.totalRiders} />
         <StatCard label="Riders online now" value={stats.onlineRiders} />

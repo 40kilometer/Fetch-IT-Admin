@@ -63,7 +63,7 @@ model Booking {
   baseFare        Float
   surgeMultiplier Float     @default(1.0)
   totalFare       Float
-  currency        String   @default("USD")
+  currency        String   @default("PHP")
   status          String   @default("PENDING")
   matchedAt       DateTime?
   pickedUpAt      DateTime?

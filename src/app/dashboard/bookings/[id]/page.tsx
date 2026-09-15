@@ -44,9 +44,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
 
         <div className="card" style={{ padding: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginTop: 0 }}>Fare</h2>
-          <Row label="Base fare" value={`$${booking.baseFare.toFixed(2)}`} />
+          <Row label="Base fare" value={`₱${booking.baseFare.toFixed(2)}`} />
           <Row label="Surge" value={`×${booking.surgeMultiplier.toFixed(1)}`} />
-          <Row label="Total" value={`$${booking.totalFare.toFixed(2)} ${booking.currency}`} />
+          <Row label="Total" value={`₱${booking.totalFare.toFixed(2)} ${booking.currency}`} />
           <Row label="Created" value={new Date(booking.createdAt).toLocaleString()} />
           {booking.deliveredAt && <Row label="Delivered" value={new Date(booking.deliveredAt).toLocaleString()} />}
           {booking.cancelledAt && <Row label="Cancelled" value={new Date(booking.cancelledAt).toLocaleString()} />}
