@@ -8,8 +8,14 @@ export const BOOKING_STATUS_LABEL: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+export const BOOKING_TYPE_LABEL: Record<string, string> = {
+  DELIVERY: "Delivery",
+  RIDE: "Ride",
+};
+
 export const VEHICLE_LABEL: Record<string, string> = {
   MOTORCYCLE: "Motorcycle",
+  TRICYCLE: "Tricycle",
   SEDAN: "Sedan",
   CLOSED_VAN: "Closed van",
   FLATBED: "Flatbed",

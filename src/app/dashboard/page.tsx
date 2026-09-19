@@ -3,18 +3,30 @@ import { BOOKING_STATUS_LABEL, VEHICLE_LABEL } from "@/lib/constants";
 import { DashboardCharts, type DayPoint, type StatusPoint, type VehiclePoint } from "./dashboard-charts";
 
 async function getStats() {
-  const [totalBookings, activeBookings, totalCustomers, totalRiders, onlineRiders, revenueAgg] =
-    await Promise.all([
-      db.booking.count(),
-      db.booking.count({ where: { status: { in: ["PENDING", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } }),
-      db.user.count({ where: { role: "CUSTOMER" } }),
-      db.user.count({ where: { role: "RIDER" } }),
-      db.user.count({ where: { role: "RIDER", isOnline: true } }),
-      db.booking.aggregate({ where: { status: "DELIVERED" }, _sum: { totalFare: true } }),
-    ]);
+  const [
+    totalBookings,
+    deliveryBookings,
+    rideBookings,
+    activeBookings,
+    totalCustomers,
+    totalRiders,
+    onlineRiders,
+    revenueAgg,
+  ] = await Promise.all([
+    db.booking.count(),
+    db.booking.count({ where: { type: "DELIVERY" } }),
+    db.booking.count({ where: { type: "RIDE" } }),
+    db.booking.count({ where: { status: { in: ["PENDING", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } }),
+    db.user.count({ where: { role: "CUSTOMER" } }),
+    db.user.count({ where: { role: "RIDER" } }),
+    db.user.count({ where: { role: "RIDER", isOnline: true } }),
+    db.booking.aggregate({ where: { status: "DELIVERED" }, _sum: { totalFare: true } }),
+  ]);
 
   return {
     totalBookings,
+    deliveryBookings,
+    rideBookings,
     activeBookings,
     totalCustomers,
     totalRiders,
@@ -91,6 +103,8 @@ export default async function OverviewPage() {
       <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Overview</h1>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
         <StatCard label="Total bookings" value={stats.totalBookings} />
+        <StatCard label="Delivery bookings" value={stats.deliveryBookings} />
+        <StatCard label="Ride bookings" value={stats.rideBookings} />
         <StatCard label="Active bookings" value={stats.activeBookings} />
         <StatCard label="Total revenue" value={`₱${stats.revenue.toFixed(2)}`} />
         <StatCard label="Customers" value={stats.totalCustomers} />

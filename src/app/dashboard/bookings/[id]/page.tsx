@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { StatusBadge } from "../../status-badge";
-import { VEHICLE_LABEL } from "@/lib/constants";
+import { BOOKING_TYPE_LABEL, VEHICLE_LABEL } from "@/lib/constants";
 import { CancelButton } from "./cancel-button";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -23,12 +23,28 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   if (!booking) notFound();
 
   const isFinal = booking.status === "DELIVERED" || booking.status === "CANCELLED";
+  const isRide = booking.type === "RIDE";
 
   return (
     <div>
       <Link href="/dashboard/bookings" style={{ fontSize: 14, color: "var(--text-muted)" }}>← Back to bookings</Link>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 20px" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{booking.refCode}</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{booking.refCode}</h1>
+          <span
+            style={{
+              padding: "3px 12px",
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: 600,
+              ...(isRide
+                ? { background: "#d1fae5", color: "#065f46" }
+                : { background: "#fef3c7", color: "#92400e" }),
+            }}
+          >
+            {BOOKING_TYPE_LABEL[booking.type] ?? booking.type}
+          </span>
+        </div>
         <StatusBadge status={booking.status} />
       </div>
 
@@ -39,7 +55,11 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <Row label="Drop-off" value={booking.dropoffLabel} />
           <Row label="Distance" value={`${booking.distanceKm} km`} />
           <Row label="Vehicle" value={VEHICLE_LABEL[booking.vehicleClass] ?? booking.vehicleClass} />
-          <Row label="Cargo weight" value={`${booking.cargoWeightKg} kg`} />
+          {isRide ? (
+            <Row label="Passengers" value={String(booking.passengers ?? 1)} />
+          ) : (
+            <Row label="Cargo weight" value={`${booking.cargoWeightKg} kg`} />
+          )}
         </div>
 
         <div className="card" style={{ padding: 20 }}>
@@ -48,7 +68,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <Row label="Surge" value={`×${booking.surgeMultiplier.toFixed(1)}`} />
           <Row label="Total" value={`₱${booking.totalFare.toFixed(2)} ${booking.currency}`} />
           <Row label="Created" value={new Date(booking.createdAt).toLocaleString()} />
-          {booking.deliveredAt && <Row label="Delivered" value={new Date(booking.deliveredAt).toLocaleString()} />}
+          {booking.deliveredAt && <Row label="Completed" value={new Date(booking.deliveredAt).toLocaleString()} />}
           {booking.cancelledAt && <Row label="Cancelled" value={new Date(booking.cancelledAt).toLocaleString()} />}
         </div>
 
