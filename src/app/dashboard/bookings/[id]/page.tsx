@@ -51,6 +51,12 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div className="card" style={{ padding: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginTop: 0 }}>Route</h2>
+          {booking.ticketId && (
+            <Row
+              label="Tracking ticket"
+              value={<span style={{ fontFamily: "monospace" }}>{booking.ticketId}</span>}
+            />
+          )}
           <Row label="Pickup" value={booking.pickupLabel} />
           <Row label="Drop-off" value={booking.dropoffLabel} />
           <Row label="Distance" value={`${booking.distanceKm} km`} />

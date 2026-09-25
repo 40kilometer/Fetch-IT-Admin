@@ -78,7 +78,14 @@ export default async function BookingsPage({
           <tbody>
             {bookings.map((b) => (
               <tr key={b.id}>
-                <td style={{ fontWeight: 500 }}>{b.refCode}</td>
+                <td style={{ fontWeight: 500 }}>
+                  {b.refCode}
+                  {b.ticketId && (
+                    <div style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>
+                      {b.ticketId}
+                    </div>
+                  )}
+                </td>
                 <td>
                   <span
                     style={{
