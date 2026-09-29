@@ -106,7 +106,7 @@ export default async function OverviewPage() {
         <StatCard label="Delivery bookings" value={stats.deliveryBookings} />
         <StatCard label="Ride bookings" value={stats.rideBookings} />
         <StatCard label="Active bookings" value={stats.activeBookings} />
-        <StatCard label="Total revenue" value={`₱${stats.revenue.toFixed(2)}`} />
+        <StatCard label="Completed fare total" value={`₱${stats.revenue.toFixed(2)}`} />
         <StatCard label="Customers" value={stats.totalCustomers} />
         <StatCard label="Riders" value={stats.totalRiders} />
         <StatCard label="Riders online now" value={stats.onlineRiders} />

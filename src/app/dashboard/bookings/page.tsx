@@ -33,10 +33,17 @@ export default async function BookingsPage({
   });
 
   const statuses = Object.keys(BOOKING_STATUS_LABEL);
+  const exportQuery = new URLSearchParams();
+  if (status) exportQuery.set("status", status);
+  if (type) exportQuery.set("type", type);
+  if (q) exportQuery.set("q", q);
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 20 }}>Bookings</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600 }}>Bookings</h1>
+        <a className="btn" href={`/api/bookings/export?${exportQuery.toString()}`}>Export CSV (up to 5,000)</a>
+      </div>
 
       <form style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <input

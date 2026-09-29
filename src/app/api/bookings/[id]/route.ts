@@ -17,10 +17,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   }
 
-  const booking = await db.booking.update({
-    where: { id },
+  const changed = await db.booking.updateMany({
+    where: { id, status: { notIn: ["DELIVERED", "CANCELLED"] } },
     data: { status: "CANCELLED", cancelledAt: new Date() },
   });
+  if (changed.count === 0) return NextResponse.json({ error: "Booking is completed, cancelled, or no longer available." }, { status: 409 });
+  const booking = await db.booking.findUnique({ where: { id } });
 
   return NextResponse.json({ booking });
 }
