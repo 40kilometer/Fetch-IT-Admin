@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import Link from "next/link";
+import { ACTIVE_STATUSES, bookingWhere } from "@/lib/operations";
 import { BOOKING_STATUS_LABEL, VEHICLE_LABEL } from "@/lib/constants";
 import { DashboardCharts, type DayPoint, type StatusPoint, type VehiclePoint } from "./dashboard-charts";
 
@@ -16,7 +18,7 @@ async function getStats() {
     db.booking.count(),
     db.booking.count({ where: { type: "DELIVERY" } }),
     db.booking.count({ where: { type: "RIDE" } }),
-    db.booking.count({ where: { status: { in: ["PENDING", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } }),
+    db.booking.count({ where: { status: { in: ACTIVE_STATUSES } } }),
     db.user.count({ where: { role: "CUSTOMER" } }),
     db.user.count({ where: { role: "RIDER" } }),
     db.user.count({ where: { role: "RIDER", isOnline: true } }),
@@ -36,9 +38,8 @@ async function getStats() {
 }
 
 async function getChartData() {
-  const since = new Date();
-  since.setDate(since.getDate() - 13);
-  since.setHours(0, 0, 0, 0);
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const since = new Date(new Date(`${today}T00:00:00+08:00`).getTime() - 13 * 86400000);
 
   const [recentBookings, statusGroups, vehicleGroups] = await Promise.all([
     db.booking.findMany({
@@ -51,12 +52,11 @@ async function getChartData() {
 
   const days: DayPoint[] = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+    const d = new Date(new Date(`${today}T00:00:00Z`).getTime() - i * 86400000);
     const key = d.toISOString().slice(0, 10);
     days.push({
       date: key,
-      label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      label: d.toLocaleDateString("en-PH", { month: "short", day: "numeric", timeZone: "UTC" }),
       bookings: 0,
       revenue: 0,
     });
@@ -64,7 +64,7 @@ async function getChartData() {
   const dayIndex = new Map(days.map((d, i) => [d.date, i]));
 
   for (const b of recentBookings) {
-    const key = b.createdAt.toISOString().slice(0, 10);
+    const key = new Date(b.createdAt.getTime() + 8 * 3600000).toISOString().slice(0, 10);
     const idx = dayIndex.get(key);
     if (idx === undefined) continue;
     days[idx].bookings += 1;
@@ -96,12 +96,22 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 export default async function OverviewPage() {
-  const [stats, chartData] = await Promise.all([getStats(), getChartData()]);
+  const now = new Date();
+  const [stats, chartData, unassigned, stalled, support] = await Promise.all([getStats(), getChartData(),
+    db.booking.count({ where: bookingWhere({ attention: "unassigned" }, now) }),
+    db.booking.count({ where: bookingWhere({ attention: "stalled" }, now) }),
+    db.supportTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, adminReply: null } }),
+  ]);
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 24 }}>Overview</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+      <div className="page-heading"><div><div className="eyebrow">OPERATIONS OVERVIEW</div><h1>Your daily overview</h1><p className="muted small">Keep bookings moving and customers informed.</p></div><p className="muted small">As of {now.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</p></div>
+      <section className="card attention-panel" aria-labelledby="attention-title"><h2 id="attention-title">Needs attention</h2><p className="muted small">Review these queues before moving on to the numbers.</p><div className="attention-grid">
+        <Link href="/dashboard/bookings?attention=unassigned" className="attention-item"><strong>{unassigned}</strong><span>Waiting for a rider →</span><small>Unassigned for over 5 minutes. Future scheduled bookings excluded.</small></Link>
+        <Link href="/dashboard/bookings?attention=stalled" className="attention-item"><strong>{stalled}</strong><span>Check booking progress →</span><small>Assigned bookings with no record update for 30 minutes.</small></Link>
+        <Link href="/dashboard/support?unanswered=1" className="attention-item"><strong>{support}</strong><span>Unanswered requests →</span><small>Open or in-progress requests awaiting an admin reply.</small></Link>
+      </div></section>
+      <div className="stat-grid">
         <StatCard label="Total bookings" value={stats.totalBookings} />
         <StatCard label="Delivery bookings" value={stats.deliveryBookings} />
         <StatCard label="Ride bookings" value={stats.rideBookings} />

@@ -4,12 +4,13 @@ import { db } from "@/lib/db";
 import { StatusBadge } from "../../status-badge";
 import { BOOKING_TYPE_LABEL, VEHICLE_LABEL } from "@/lib/constants";
 import { CancelButton } from "./cancel-button";
+import { BookingTimeline } from "../booking-timeline";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ color: "var(--text-muted)", fontSize: 14 }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 500 }}>{value}</span>
+    <div className="detail-row">
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
@@ -28,8 +29,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   return (
     <div>
       <Link href="/dashboard/bookings" style={{ fontSize: 14, color: "var(--text-muted)" }}>← Back to bookings</Link>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 20px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="page-heading" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{booking.refCode}</h1>
           <span
             style={{
@@ -48,7 +49,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         <StatusBadge status={booking.status} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <BookingTimeline booking={booking} />
+      <div className="detail-grid">
         <div className="card" style={{ padding: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginTop: 0 }}>Route</h2>
           {booking.ticketId && (

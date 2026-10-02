@@ -29,6 +29,7 @@ const COLORS = {
 
 const STATUS_COLORS: Record<string, string> = {
   PENDING: "#9ca3af",
+  MATCHED: "#0891b2",
   ACCEPTED: COLORS.blue,
   PICKED_UP: "#7c3aed",
   IN_TRANSIT: COLORS.amber,
@@ -60,17 +61,21 @@ export function DashboardCharts({
   days,
   statusBreakdown,
   vehicleBreakdown,
+  bookingTitle = "Bookings — last 14 days",
+  fareTitle = "Completed fare total — last 14 days",
 }: {
   days: DayPoint[];
   statusBreakdown: StatusPoint[];
   vehicleBreakdown: VehiclePoint[];
+  bookingTitle?: string;
+  fareTitle?: string;
 }) {
   const hasStatusData = statusBreakdown.some((s) => s.count > 0);
   const hasVehicleData = vehicleBreakdown.some((v) => v.count > 0);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, marginTop: 16 }}>
-      <ChartCard title="Bookings — last 14 days">
+    <div className="chart-grid">
+      <ChartCard title={bookingTitle}>
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={days} margin={{ left: -20, right: 8, top: 4, bottom: 0 }}>
             <defs>
@@ -85,7 +90,7 @@ export function DashboardCharts({
               tick={{ fontSize: 11, fill: COLORS.gray }}
               axisLine={{ stroke: COLORS.border }}
               tickLine={false}
-              interval={1}
+              interval={Math.max(0, Math.ceil(days.length / 7) - 1)}
             />
             <YAxis tick={{ fontSize: 11, fill: COLORS.gray }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
             <Tooltip contentStyle={tooltipStyle} />
@@ -125,7 +130,7 @@ export function DashboardCharts({
         )}
       </ChartCard>
 
-      <ChartCard title="Revenue — last 14 days (delivered)">
+      <ChartCard title={fareTitle}>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={days} margin={{ left: -20, right: 8, top: 4, bottom: 0 }}>
             <CartesianGrid stroke={COLORS.border} vertical={false} />
@@ -134,7 +139,7 @@ export function DashboardCharts({
               tick={{ fontSize: 11, fill: COLORS.gray }}
               axisLine={{ stroke: COLORS.border }}
               tickLine={false}
-              interval={1}
+              interval={Math.max(0, Math.ceil(days.length / 7) - 1)}
             />
             <YAxis
               tick={{ fontSize: 11, fill: COLORS.gray }}
@@ -143,8 +148,8 @@ export function DashboardCharts({
               width={40}
               tickFormatter={(v: number) => `₱${v}`}
             />
-            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`₱${v.toFixed(2)}`, "Revenue"]} />
-            <Bar dataKey="revenue" name="Revenue" fill={COLORS.green} radius={[4, 4, 0, 0]} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`₱${v.toFixed(2)}`, "Completed fare"]} />
+            <Bar dataKey="revenue" name="Completed fare" fill={COLORS.green} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

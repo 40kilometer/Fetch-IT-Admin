@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { VEHICLE_LABEL } from "@/lib/constants";
 import { BanButton } from "../ban-button";
@@ -32,7 +33,7 @@ export default async function RidersPage() {
           <tbody>
             {riders.map((r) => (
               <tr key={r.id}>
-                <td style={{ fontWeight: 500 }}>{r.name}</td>
+                <td style={{ fontWeight: 500 }}><Link href={`/dashboard/riders/${r.id}`}>{r.name} →</Link></td>
                 <td>
                   <div>{r.email}</div>
                   <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{r.phone ?? "—"}</div>

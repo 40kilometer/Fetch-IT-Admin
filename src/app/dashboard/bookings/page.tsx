@@ -1,134 +1,37 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { BOOKING_STATUS_LABEL, BOOKING_TYPE_LABEL } from "@/lib/constants";
+import { bookingWhere, bookingQuery, pageNumber, PAGE_SIZE, normalizeFilters, type BookingFilters } from "@/lib/operations";
 import { StatusBadge } from "../status-badge";
 
-export default async function BookingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string; q?: string; type?: string }>;
-}) {
-  const { status, q, type } = await searchParams;
-
-  const bookings = await db.booking.findMany({
-    where: {
-      ...(status ? { status } : {}),
-      ...(type === "DELIVERY" || type === "RIDE" ? { type } : {}),
-      ...(q
-        ? {
-            OR: [
-              { refCode: { contains: q, mode: "insensitive" } },
-              { pickupLabel: { contains: q, mode: "insensitive" } },
-              { dropoffLabel: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    include: {
-      customer: { select: { name: true } },
-      rider: { select: { name: true } },
-    },
-  });
-
-  const statuses = Object.keys(BOOKING_STATUS_LABEL);
-  const exportQuery = new URLSearchParams();
-  if (status) exportQuery.set("status", status);
-  if (type) exportQuery.set("type", type);
-  if (q) exportQuery.set("q", q);
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600 }}>Bookings</h1>
-        <a className="btn" href={`/api/bookings/export?${exportQuery.toString()}`}>Export CSV (up to 5,000)</a>
-      </div>
-
-      <form style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <input
-          className="input"
-          name="q"
-          defaultValue={q}
-          placeholder="Search ref code or address…"
-          style={{ maxWidth: 320 }}
-        />
-        <select className="input" name="status" defaultValue={status ?? ""} style={{ maxWidth: 180 }}>
-          <option value="">All statuses</option>
-          {statuses.map((s) => (
-            <option key={s} value={s}>{BOOKING_STATUS_LABEL[s]}</option>
-          ))}
-        </select>
-        <select className="input" name="type" defaultValue={type ?? ""} style={{ maxWidth: 150 }}>
-          <option value="">All types</option>
-          <option value="DELIVERY">Delivery</option>
-          <option value="RIDE">Ride</option>
-        </select>
-        <button type="submit" className="btn">Filter</button>
-        {(status || q || type) && <Link href="/dashboard/bookings" className="btn">Clear</Link>}
-      </form>
-
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Ref</th>
-              <th>Type</th>
-              <th>Customer</th>
-              <th>Driver</th>
-              <th>Route</th>
-              <th>Status</th>
-              <th>Fare</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {bookings.map((b) => (
-              <tr key={b.id}>
-                <td style={{ fontWeight: 500 }}>
-                  {b.refCode}
-                  {b.ticketId && (
-                    <div style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" }}>
-                      {b.ticketId}
-                    </div>
-                  )}
-                </td>
-                <td>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      padding: "2px 10px",
-                      borderRadius: 999,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      ...(b.type === "RIDE"
-                        ? { background: "#d1fae5", color: "#065f46" }
-                        : { background: "#fef3c7", color: "#92400e" }),
-                    }}
-                  >
-                    {BOOKING_TYPE_LABEL[b.type] ?? b.type}
-                  </span>
-                </td>
-                <td>{b.customer.name}</td>
-                <td>{b.rider?.name ?? "—"}</td>
-                <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {b.pickupLabel} → {b.dropoffLabel}
-                </td>
-                <td><StatusBadge status={b.status} /></td>
-                <td>₱{b.totalFare.toFixed(2)}</td>
-                <td>
-                  <Link href={`/dashboard/bookings/${b.id}`} className="btn" style={{ padding: "5px 12px", fontSize: 13 }}>
-                    View
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {bookings.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: 32 }}>No bookings match this filter.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+export default async function BookingsPage({ searchParams }: { searchParams: Promise<BookingFilters> }) {
+  const filters = normalizeFilters(await searchParams);
+  let error = "";
+  let where;
+  try { where = bookingWhere(filters); } catch (e) { error = e instanceof Error ? e.message : "Choose valid filters."; }
+  const total = error ? 0 : await db.booking.count({ where });
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const page = Math.min(pageNumber(filters.page), pages);
+  const bookings = error ? [] : await db.booking.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: PAGE_SIZE, skip: (page - 1) * PAGE_SIZE, include: { customer: { select: { name: true } }, rider: { select: { name: true } } } });
+  const attention = filters.attention === "unassigned" ? "Waiting for a rider over 5 minutes" : filters.attention === "stalled" ? "No booking update for 30 minutes" : "";
+  return <div>
+    <div className="page-heading"><div><div className="eyebrow">BOOKING MANAGEMENT</div><h1>Bookings</h1><p className="muted small">Find a booking, review its progress, and resolve exceptions.</p></div><a className="btn" href={`/api/bookings/export?${bookingQuery(filters)}`}>Export CSV</a></div>
+    {attention && <p className="muted small">Attention filter: {attention}. <Link href="/dashboard/bookings">Show all bookings →</Link></p>}
+    <form className="card filters">
+      {attention && <input type="hidden" name="attention" value={filters.attention} />}
+      <label>Search bookings<input className="input" name="q" defaultValue={filters.q} placeholder="Reference or address" maxLength={100} /></label>
+      <label>Status<select className="input" name="status" defaultValue={filters.status ?? ""}><option value="">All statuses</option>{Object.entries(BOOKING_STATUS_LABEL).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>Service<select className="input" name="type" defaultValue={filters.type ?? ""}><option value="">All services</option><option value="DELIVERY">Delivery</option><option value="RIDE">Ride</option></select></label>
+      <label>From date<input className="input" type="date" name="from" defaultValue={filters.from} /></label>
+      <label>To date<input className="input" type="date" name="to" defaultValue={filters.to} /></label>
+      <div className="filter-actions"><button className="btn btn-primary" type="submit">Apply filters</button><Link className="btn" href="/dashboard/bookings">Clear</Link><p className="muted small">Booking dates use Philippine time. CSV includes up to 5,000 matches.</p></div>
+    </form>
+    {error && <p className="error-message" role="alert">{error}</p>}
+    {!bookings.length && !error && <div className="card empty-state">No bookings match these filters.</div>}
+    {bookings.length > 0 && <>
+      <div className="card table-card booking-desktop-table"><table><thead><tr><th>Reference</th><th>Service</th><th>Customer / Rider</th><th>Destination</th><th>Status</th><th>Fare</th><th></th></tr></thead><tbody>{bookings.map(b => <tr key={b.id}><td><strong>{b.refCode}</strong><div className="muted small">{b.createdAt.toLocaleDateString("en-PH", { timeZone: "Asia/Manila" })}</div></td><td>{BOOKING_TYPE_LABEL[b.type]}</td><td>{b.customer.name}<div className="muted small">{b.rider?.name ?? "No rider assigned"}</div></td><td className="booking-route"><span title={b.dropoffLabel}>{b.dropoffLabel}</span></td><td><StatusBadge status={b.status} /></td><td>₱{b.totalFare.toFixed(2)}</td><td><Link className="btn" href={`/dashboard/bookings/${b.id}`} aria-label={`View ${b.refCode}`}>View</Link></td></tr>)}</tbody></table></div>
+      <div className="booking-mobile-list">{bookings.map(b => <Link className="card booking-mobile-card" key={b.id} href={`/dashboard/bookings/${b.id}`} aria-label={`View ${b.refCode}, ${b.dropoffLabel}`}><div className="booking-card-header"><strong>{b.refCode}</strong><StatusBadge status={b.status} /></div><p>{b.dropoffLabel}</p><div className="booking-card-footer"><span className="muted">{BOOKING_TYPE_LABEL[b.type]} · {b.customer.name}</span><strong>₱{b.totalFare.toFixed(2)} →</strong></div></Link>)}</div>
+    </>}
+    {!error && <div className="pagination"><span className="muted">{total ? `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE,total)} of ${total} bookings` : "0 bookings"}</span><nav aria-label="Booking pages">{page > 1 ? <Link className="btn" href={`/dashboard/bookings?${bookingQuery(filters,page - 1)}`}>Previous</Link> : <span className="btn disabled-link" aria-disabled="true">Previous</span>}<span>Page {page} of {pages}</span>{page < pages ? <Link className="btn" href={`/dashboard/bookings?${bookingQuery(filters,page + 1)}`}>Next</Link> : <span className="btn disabled-link" aria-disabled="true">Next</span>}</nav></div>}
+  </div>;
 }

@@ -10,6 +10,7 @@ export function BanButton({ userId, isBanned }: { userId: string; isBanned: bool
   async function handleBan() {
     const reason = prompt("Reason for restricting this account (shown to the user):");
     if (reason === null) return; // cancelled
+    if (!reason.trim() || reason.length > 500) { alert("Add a reason of up to 500 characters."); return; }
     setLoading(true);
     try {
       const res = await fetch(`/api/users/${userId}`, {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getAdminSession } from "@/lib/session";
-import { BOOKING_STATUS_LABEL } from "@/lib/constants";
+import { currentAdmin } from "@/lib/admin-access";
+import { bookingWhere } from "@/lib/operations";
 
 function csvCell(value: unknown) {
   const raw = String(value ?? "");
@@ -11,23 +11,13 @@ function csvCell(value: unknown) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getAdminSession();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  if (!await currentAdmin()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const params = req.nextUrl.searchParams;
-  const status = params.get("status") ?? "";
-  const type = params.get("type") ?? "";
-  const q = (params.get("q") ?? "").trim().slice(0, 100);
+  let where;
+  try { where = bookingWhere(Object.fromEntries(params)); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid dates." }, { status: 400 }); }
   const bookings = await db.booking.findMany({
-    where: {
-      ...(status && Object.hasOwn(BOOKING_STATUS_LABEL, status) ? { status } : {}),
-      ...(type === "DELIVERY" || type === "RIDE" ? { type } : {}),
-      ...(q ? { OR: [
-        { refCode: { contains: q, mode: "insensitive" as const } },
-        { pickupLabel: { contains: q, mode: "insensitive" as const } },
-        { dropoffLabel: { contains: q, mode: "insensitive" as const } },
-      ] } : {}),
-    },
+    where,
     orderBy: { createdAt: "desc" },
     take: 5000,
     include: { customer: { select: { name: true } }, rider: { select: { name: true } } },
