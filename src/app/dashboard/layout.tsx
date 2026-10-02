@@ -20,6 +20,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Link href="/dashboard/bookings" className="sidebar-link">Bookings</Link>
         <Link href="/dashboard/riders" className="sidebar-link">Riders</Link>
         <Link href="/dashboard/customers" className="sidebar-link">Customers</Link>
+        <Link href="/dashboard/support" className="sidebar-link">Customer support</Link>
         <div style={{ marginTop: "auto", paddingTop: 20, borderTop: "1px solid var(--border)" }}>
           <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>{session.name}</p>
           <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0 12px" }}>{session.email}</p>
