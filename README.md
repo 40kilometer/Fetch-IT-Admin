@@ -62,6 +62,8 @@ npm run dev                   # http://localhost:3002
 npm run create-admin -- you@example.com "a strong password" "Your Name"
 ```
 
+To replace all previous admin accounts with that account atomically, append `--replace-existing`. This removes other ADMIN users only; customer and rider accounts are unaffected. Passwords are hashed and should never be committed to the repository.
+
 Promotes the email to `ADMIN` (or creates it) using the same scrypt password
 format as the rest of Fetch-It.
 

@@ -1,5 +1,6 @@
 // One-off script to create an admin account or update an existing admin password.
 // Run with:  node scripts/create-admin.js you@example.com "a strong password" "Your Name"
+// Add --replace-existing to replace the other ADMIN accounts atomically.
 //
 // Uses the exact same password-hashing format as the rest of Fetch-It
 // (Node's built-in scrypt), so this account can log in normally.
@@ -25,17 +26,24 @@ async function main() {
   const passwordHash = hashPassword(password);
 
   const normalizedEmail = email.trim().toLowerCase();
+  const replaceExisting = process.argv.includes("--replace-existing");
+  let removedAdmins = 0;
   const user = await db.$transaction(async tx => {
     const existing = await tx.user.findUnique({ where: { email: normalizedEmail } });
     if (existing && existing.role !== "ADMIN") throw new Error("This email belongs to another account role; use a separate admin email.");
-    const account = await tx.user.upsert({ where: { email: normalizedEmail }, update: {},
+    const account = await tx.user.upsert({ where: { email: normalizedEmail }, update: { ...(name ? { name } : {}), isBanned: false, banReason: null, bannedAt: null },
       create: { email: normalizedEmail, name: name || "Admin", role: "ADMIN" } });
     await tx.authIdentity.upsert({ where: { userId_provider: { userId: account.id, provider: "PASSWORD" } },
       update: { passwordHash }, create: { userId: account.id, provider: "PASSWORD", providerUserId: normalizedEmail, passwordHash } });
+    if (replaceExisting) {
+      const removed = await tx.user.deleteMany({ where: { role: "ADMIN", id: { not: account.id } } });
+      removedAdmins = removed.count;
+    }
     return account;
   });
 
   console.log(`✔ Admin account ready: ${user.email} (id: ${user.id})`);
+  if (replaceExisting) console.log(`Replaced ${removedAdmins} previous admin account(s).`);
   await db.$disconnect();
 }
 
