@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const changed = await tx.user.updateMany({ where: { id, role: { in: ["CUSTOMER", "RIDER"] }, isBanned: !banned }, data: { isBanned: banned, banReason: banned ? body.reason.trim() : null, bannedAt: banned ? new Date() : null } });
       if (!changed.count) return null;
       await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: banned ? "USER_RESTRICTED" : "USER_RESTORED", entityType: "USER", entityId: id, details: { reason: banned ? body.reason.trim() : "Restriction lifted", previousReason: target.banReason } } });
-      return tx.user.findUnique({ where: { id } });
+      return tx.user.findUnique({ where: { id }, select: { id: true, name: true, role: true, isBanned: true, banReason: true, bannedAt: true } });
     });
     return result ? NextResponse.json({ user: result }) : NextResponse.json({ error: "The account was already changed. Refresh and try again." }, { status: 409 });
   } catch { return NextResponse.json({ error: "Couldn’t update the account. Please retry." }, { status: 503 }); }

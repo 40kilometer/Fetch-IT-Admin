@@ -2,7 +2,7 @@
 
 Operations dashboard for the Fetch-It platform — users, bookings, and platform
 metrics for both **Delivery** and **Ride** products.
-Next.js 16 · App Router · TypeScript · Prisma · PostgreSQL (Railway).
+Next.js 16 · App Router · TypeScript · Prisma · PostgreSQL (Neon).
 
 ## What's inside
 
@@ -23,12 +23,7 @@ Next.js 16 · App Router · TypeScript · Prisma · PostgreSQL (Railway).
 
 ### Additive database update
 
-Customer, Rider and Admin share the synchronized schema. Apply this repeatable SQL before deploying the admin update to a new database:
-
-```powershell
-npx prisma db execute --file prisma/add-admin-operations.sql --schema prisma/schema.prisma
-npx prisma generate
-```
+Customer, Rider and Admin share one schema. The customer app owns versioned migrations; from fetch-customer run `npm run db:deploy`. Do not apply the old manual SQL patches to the rebuilt schema.
 
 It adds support priority/assignment fields, `SupportMessage`, and `AdminAudit`. Existing booking/customer data is retained.
 
@@ -70,7 +65,7 @@ format as the rest of Fetch-It.
 
 1. Push this folder to a GitHub repo and import it in Vercel.
 2. Set environment variables:
-   - `DATABASE_URL` — the **public** Railway PostgreSQL connection string.
+   - `DATABASE_URL` — the shared Neon PostgreSQL connection string.
    - `ADMIN_SESSION_SECRET` — any long random string (used to sign session cookies).
 3. Deploy. The build runs `prisma generate && next build`.
 
@@ -79,3 +74,7 @@ format as the rest of Fetch-It.
 Shared with the Fetch-It **Customer** and **Rider** apps — one PostgreSQL
 schema (`prisma/schema.prisma`), one `DATABASE_URL`. Bookings created in the
 customer app (including rides) appear here immediately.
+
+## Database rebuild
+
+The canonical schema and versioned migrations live in fetch-customer. See fetch-customer/docs/database-rebuild.md for account identities, rider records, delivery codes, GPS retention, and coordinated deployment. Set the same DELIVERY_CODE_SECRET in customer and rider environments. Configure CRON_SECRET in the rider deployment for daily tracking cleanup. External image storage is deferred.

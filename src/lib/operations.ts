@@ -1,7 +1,7 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, BookingStatus, BookingType } from "@prisma/client";
 
-export const ACTIVE_STATUSES = ["PENDING", "MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"];
-const statuses = [...ACTIVE_STATUSES, "DELIVERED", "CANCELLED"];
+export const ACTIVE_STATUSES: BookingStatus[] = ["PENDING", "MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"];
+const statuses: BookingStatus[] = [...ACTIVE_STATUSES, "DELIVERED", "CANCELLED"];
 export type BookingFilters = { q?: string; status?: string; type?: string; from?: string; to?: string; attention?: string; page?: string };
 export const PAGE_SIZE = 25;
 export function normalizeFilters(input: Record<string, unknown>): BookingFilters {
@@ -20,13 +20,13 @@ export function dateBounds(start?: string, end?: string) {
 export function bookingWhere(filters: BookingFilters, now = new Date()): Prisma.BookingWhereInput {
   const q = filters.q?.trim().slice(0, 100);
   const dates = dateBounds(filters.from, filters.to);
-  const attention = filters.attention === "unassigned"
+  const attention: Prisma.BookingWhereInput | undefined = filters.attention === "unassigned"
     ? { riderId: null, status: { in: ACTIVE_STATUSES }, createdAt: { lte: new Date(now.getTime() - 5 * 60000) }, OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] }
     : filters.attention === "stalled" ? { riderId: { not: null }, status: { in: ["MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] }, updatedAt: { lte: new Date(now.getTime() - 30 * 60000) }, OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] } : undefined;
   return { AND: [
     ...(attention ? [attention] : []),
-    ...(filters.status && statuses.includes(filters.status) ? [{ status: filters.status }] : []),
-    ...(filters.type === "DELIVERY" || filters.type === "RIDE" ? [{ type: filters.type }] : []),
+    ...(filters.status && statuses.includes(filters.status as BookingStatus) ? [{ status: filters.status as BookingStatus }] : []),
+    ...(filters.type === "DELIVERY" || filters.type === "RIDE" ? [{ type: filters.type as BookingType }] : []),
     ...(dates.gte || dates.lte ? [{ createdAt: dates }] : []),
     ...(q ? [{ OR: [{ refCode: { contains: q, mode: "insensitive" as const } }, { pickupLabel: { contains: q, mode: "insensitive" as const } }, { dropoffLabel: { contains: q, mode: "insensitive" as const } }] }] : []),
   ] };

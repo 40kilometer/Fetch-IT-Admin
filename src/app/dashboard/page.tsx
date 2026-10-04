@@ -21,7 +21,7 @@ async function getStats() {
     db.booking.count({ where: { status: { in: ACTIVE_STATUSES } } }),
     db.user.count({ where: { role: "CUSTOMER" } }),
     db.user.count({ where: { role: "RIDER" } }),
-    db.user.count({ where: { role: "RIDER", isOnline: true } }),
+    db.user.count({ where: { role: "RIDER", isBanned: false, riderPresence: { is: { isOnline: true } } } }),
     db.booking.aggregate({ where: { status: "DELIVERED" }, _sum: { totalFare: true } }),
   ]);
 
@@ -33,7 +33,7 @@ async function getStats() {
     totalCustomers,
     totalRiders,
     onlineRiders,
-    revenue: revenueAgg._sum.totalFare ?? 0,
+    revenue: Number(revenueAgg._sum.totalFare ?? 0),
   };
 }
 
@@ -68,7 +68,7 @@ async function getChartData() {
     const idx = dayIndex.get(key);
     if (idx === undefined) continue;
     days[idx].bookings += 1;
-    if (b.status === "DELIVERED") days[idx].revenue += b.totalFare;
+    if (b.status === "DELIVERED") days[idx].revenue += Number(b.totalFare);
   }
 
   const statusBreakdown: StatusPoint[] = statusGroups.map((g) => ({
@@ -100,7 +100,7 @@ export default async function OverviewPage() {
   const [stats, chartData, unassigned, stalled, support] = await Promise.all([getStats(), getChartData(),
     db.booking.count({ where: bookingWhere({ attention: "unassigned" }, now) }),
     db.booking.count({ where: bookingWhere({ attention: "stalled" }, now) }),
-    db.supportTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, adminReply: null } }),
+    db.supportTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, messages: { none: {} } } }),
   ]);
 
   return (

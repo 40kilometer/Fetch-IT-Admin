@@ -10,12 +10,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }
 
-    const user = await db.user.findUnique({ where: { email: String(email).toLowerCase() } });
+    const user = await db.user.findUnique({ where: { email: String(email).trim().toLowerCase() }, include: { authIdentities: { where: { provider: "PASSWORD" } } } });
 
     // Same error for "no such user" and "wrong password" — don't leak
     // which one it was. Also reject outright if the account isn't an
     // admin, even with a correct password: this app is staff-only.
-    if (!user || user.role !== "ADMIN" || !verifyPassword(password, user.passwordHash)) {
+    if (!user || user.role !== "ADMIN" || user.isBanned || !user.authIdentities[0]?.passwordHash || !verifyPassword(password, user.authIdentities[0].passwordHash)) {
       return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
     }
 

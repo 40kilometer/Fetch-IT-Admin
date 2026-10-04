@@ -1,3 +1,4 @@
+import { riderSelect } from "@/lib/db-data";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -19,7 +20,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const booking = await db.booking.findUnique({
     where: { id },
-    include: { customer: true, rider: true },
+    include: { customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
   });
   if (!booking) notFound();
 
@@ -50,6 +51,13 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <BookingTimeline booking={booking} />
+      {booking.events.length > 0 && <section className="card" style={{ padding: 20, marginBottom: 20 }}>
+        <h2 style={{ fontSize: 15 }}>Booking history</h2>
+        {booking.events.map(event => <div className="detail-row" key={event.id}>
+          <span>{event.createdAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</span>
+          <span>{event.actorName} · {event.action.replaceAll("_", " ")} · {event.toStatus.replaceAll("_", " ")}{event.reason ? ` · ${event.reason}` : ""}</span>
+        </div>)}
+      </section>}
       <div className="detail-grid">
         <div className="card" style={{ padding: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginTop: 0 }}>Route</h2>
@@ -92,8 +100,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           {booking.rider ? (
             <>
               <Row label="Name" value={booking.rider.name} />
-              <Row label="Vehicle plate" value={booking.rider.vehiclePlate ?? "—"} />
-              <Row label="Rating" value={booking.rider.rating.toFixed(1)} />
+              <Row label="Vehicle plate" value={booking.rider.riderProfile?.vehiclePlate ?? "—"} />
+              <Row label="Rating" value={(booking.rider.riderProfile?.rating ?? 5).toFixed(1)} />
             </>
           ) : (
             <p style={{ color: "var(--text-muted)", fontSize: 14 }}>No rider assigned yet.</p>

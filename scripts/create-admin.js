@@ -1,4 +1,4 @@
-// One-off script to create (or promote) an admin account.
+// One-off script to create an admin account or update an existing admin password.
 // Run with:  node scripts/create-admin.js you@example.com "a strong password" "Your Name"
 //
 // Uses the exact same password-hashing format as the rest of Fetch-It
@@ -24,15 +24,15 @@ async function main() {
   const db = new PrismaClient();
   const passwordHash = hashPassword(password);
 
-  const user = await db.user.upsert({
-    where: { email: email.toLowerCase() },
-    update: { role: "ADMIN", passwordHash },
-    create: {
-      email: email.toLowerCase(),
-      name: name || "Admin",
-      passwordHash,
-      role: "ADMIN",
-    },
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await db.$transaction(async tx => {
+    const existing = await tx.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing && existing.role !== "ADMIN") throw new Error("This email belongs to another account role; use a separate admin email.");
+    const account = await tx.user.upsert({ where: { email: normalizedEmail }, update: {},
+      create: { email: normalizedEmail, name: name || "Admin", role: "ADMIN" } });
+    await tx.authIdentity.upsert({ where: { userId_provider: { userId: account.id, provider: "PASSWORD" } },
+      update: { passwordHash }, create: { userId: account.id, provider: "PASSWORD", providerUserId: normalizedEmail, passwordHash } });
+    return account;
   });
 
   console.log(`✔ Admin account ready: ${user.email} (id: ${user.id})`);

@@ -9,8 +9,7 @@ export default async function RidersPage() {
     orderBy: { createdAt: "desc" },
     select: {
       id: true, name: true, email: true, phone: true,
-      vehicleClass: true, vehiclePlate: true, rating: true,
-      totalDeliveries: true, isOnline: true, isBanned: true, banReason: true,
+      riderProfile: true, riderPresence: true, isBanned: true, banReason: true,
     },
   });
 
@@ -39,17 +38,17 @@ export default async function RidersPage() {
                   <div style={{ color: "var(--text-muted)", fontSize: 13 }}>{r.phone ?? "—"}</div>
                 </td>
                 <td>
-                  {r.vehicleClass ? VEHICLE_LABEL[r.vehicleClass] ?? r.vehicleClass : "—"}
-                  {r.vehiclePlate && <span style={{ color: "var(--text-muted)" }}> · {r.vehiclePlate}</span>}
+                  {r.riderProfile?.vehicleClass ? VEHICLE_LABEL[r.riderProfile?.vehicleClass] ?? r.riderProfile?.vehicleClass : "—"}
+                  {r.riderProfile?.vehiclePlate && <span style={{ color: "var(--text-muted)" }}> · {r.riderProfile?.vehiclePlate}</span>}
                 </td>
-                <td>★ {r.rating.toFixed(1)}</td>
-                <td>{r.totalDeliveries}</td>
+                <td>★ {(r.riderProfile?.rating ?? 5).toFixed(1)}</td>
+                <td>{r.riderProfile?.totalDeliveries}</td>
                 <td>
                   {r.isBanned ? (
                     <span className="badge badge-red" title={r.banReason ?? undefined}>Restricted</span>
                   ) : (
-                    <span className={`badge ${r.isOnline ? "badge-green" : "badge-gray"}`}>
-                      {r.isOnline ? "Online" : "Offline"}
+                    <span className={`badge ${r.riderPresence?.isOnline ? "badge-green" : "badge-gray"}`}>
+                      {r.riderPresence?.isOnline ? "Online" : "Offline"}
                     </span>
                   )}
                 </td>

@@ -3,17 +3,17 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { currentAdmin } from "@/lib/admin-access";
 import { pageNumber, PAGE_SIZE } from "@/lib/operations";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, SupportStatus, SupportPriority } from "@prisma/client";
 export default async function SupportPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}) {
   const admin = await currentAdmin(); if(!admin) redirect('/login');
   const raw = await searchParams;
   const value = (key:string) => typeof raw[key] === 'string' ? raw[key] as string : '';
   const status=value('status'),priority=value('priority'),assigned=value('assigned'),q=value('q').trim().slice(0,100),unanswered=value('unanswered');
   const where:Prisma.SupportTicketWhereInput = {AND:[
-    ...(["OPEN","IN_PROGRESS","RESOLVED"].includes(status) ? [{status}] : []),
-    ...(["LOW","NORMAL","HIGH","URGENT"].includes(priority) ? [{priority}] : []),
+    ...(["OPEN","IN_PROGRESS","RESOLVED"].includes(status) ? [{status: status as SupportStatus}] : []),
+    ...(["LOW","NORMAL","HIGH","URGENT"].includes(priority) ? [{priority: priority as SupportPriority}] : []),
     ...(assigned === 'mine' ? [{assignedAdminId:admin.id}] : assigned==='unassigned' ? [{assignedAdminId:null}] : []),
-    ...(unanswered==='1' ? [{status:{in:['OPEN','IN_PROGRESS']},adminReply:null}] : []),
+    ...(unanswered==='1' ? [{status:{in:['OPEN' as const,'IN_PROGRESS' as const]},messages:{none:{}}}] : []),
     ...(q ? [{OR:[{booking:{refCode:{contains:q,mode:'insensitive' as const}}},{customer:{name:{contains:q,mode:'insensitive' as const}}}]}] : []),
   ]};
   const total=await db.supportTicket.count({where}); const pages=Math.max(1,Math.ceil(total/PAGE_SIZE));const page=Math.min(pageNumber(value('page')),pages);
