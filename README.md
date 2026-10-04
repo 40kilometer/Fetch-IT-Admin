@@ -21,11 +21,11 @@ Next.js 16 · App Router · TypeScript · Prisma · PostgreSQL (Neon).
 - Audit log records admin cancellations with a reason, restrictions/restorations, and support changes, in the same database transaction as the action. Historical actions from before this feature are not reconstructed.
 - Reports accept a date range of up to 366 days and a service filter. Outcomes are grouped by booking creation date in Philippine time, using current statuses. Completion/cancellation rates include unfinished bookings in the denominator. Completed fare totals are quoted fares, not confirmed payment collections.
 
-### Additive database update
+### Shared database migration
 
 Customer, Rider and Admin share one schema. The customer app owns versioned migrations; from fetch-customer run `npm run db:deploy`. Do not apply the old manual SQL patches to the rebuilt schema.
 
-It adds support priority/assignment fields, `SupportMessage`, and `AdminAudit`. Existing booking/customer data is retained.
+The initial versioned migration creates the rebuilt schema, including support messages and admin audits. Follow the customer database-rebuild guide for fresh-database setup; it is not an additive upgrade of the old schema.
 
 ### Verification
 
@@ -37,6 +37,8 @@ npm run build
 
 For the opt-in database/API check, start Admin on localhost:3002 with its configured `.env`, then run with Node 24:
 
+The legacy `operations.integration.cjs` runner still uses removed schema fields and needs updating before use. The current coordinated database/API check is `fetch-customer/tests/database-rebuild.integration.cjs`; see the customer database-rebuild guide. The command below is retained as a reference for the legacy runner.
+
 ```powershell
 $env:RUN_ADMIN_INTEGRATION='1'
 node tests/operations.integration.cjs
@@ -45,6 +47,8 @@ node tests/operations.integration.cjs
 The check creates disposable accounts, synthetic matched/terminal bookings (no open rider jobs), reviews, support requests and audit entries. It removes only its own fixtures. Checks cover active admin access, notification links, pagination, inclusive dates/CSV, attention queues, support assignment and reply history, stale/concurrent mutations, audits, rider profiles and reports.
 
 ## Run locally
+
+Use npm and the committed `package-lock.json` in all three apps. The duplicate Bun lockfiles were removed.
 
 ```bash
 cp .env.example .env          # fill in DATABASE_URL + ADMIN_SESSION_SECRET
