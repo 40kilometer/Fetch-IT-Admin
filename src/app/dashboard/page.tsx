@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { awaitingSupportReply } from "@/lib/support-queue";
 import Link from "next/link";
 import { ACTIVE_STATUSES, bookingWhere } from "@/lib/operations";
 import { BOOKING_STATUS_LABEL, VEHICLE_LABEL } from "@/lib/constants";
@@ -100,7 +101,7 @@ export default async function OverviewPage() {
   const [stats, chartData, unassigned, stalled, support] = await Promise.all([getStats(), getChartData(),
     db.booking.count({ where: bookingWhere({ attention: "unassigned" }, now) }),
     db.booking.count({ where: bookingWhere({ attention: "stalled" }, now) }),
-    db.supportTicket.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, messages: { none: {} } } }),
+    db.supportTicket.count({ where: awaitingSupportReply() }),
   ]);
 
   return (

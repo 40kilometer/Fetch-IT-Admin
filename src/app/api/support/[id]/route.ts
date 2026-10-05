@@ -11,7 +11,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const ticket = await db.supportTicket.findUnique({ where: { id }, include: { messages: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
     if (!ticket) return NextResponse.json({ error: "Request not found." }, { status: 404 });
     const reply = body.reply.trim();
-    if (body.status === "RESOLVED" && !reply && !ticket.messages[0]?.body) return NextResponse.json({ error: "Add a reply before resolving this request." }, { status: 400 });
+    if (body.status === "RESOLVED" && !reply && (!ticket.lastAdminReplyAt || ticket.lastCustomerMessageAt > ticket.lastAdminReplyAt)) return NextResponse.json({ error: "Reply to the customer's latest message before resolving this request." }, { status: 400 });
     if (body.updatedAt !== undefined && (typeof body.updatedAt !== "string" || body.updatedAt !== ticket.updatedAt.toISOString())) return NextResponse.json({ error: "This request has changed. Refresh before saving." }, { status: 409 });
     const assignee = body.assignedAdminId === undefined ? ticket.assignedAdminId : body.assignedAdminId || null;
     if (assignee !== null && typeof assignee !== "string") return NextResponse.json({ error: "Choose an active admin." }, { status: 400 });
@@ -20,12 +20,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (assigned?.role !== "ADMIN" || assigned.isBanned) return NextResponse.json({ error: "Choose an active admin." }, { status: 400 });
     }
     const result = await db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "SupportTicket" WHERE "id" = ${id} FOR UPDATE`;
       const changed = await tx.supportTicket.updateMany({ where: { id, updatedAt: ticket.updatedAt }, data: { status: body.status, priority: body.priority ?? ticket.priority, assignedAdminId: assignee } });
       if (!changed.count) return null;
-      if (reply && reply !== ticket.messages[0]?.body) {
-        await tx.supportMessage.create({ data: { ticketId: id, authorId: admin.id, authorName: admin.name, body: reply } });
+      if (reply) {
+        const createdAt = new Date(Math.max(Date.now(), ticket.lastCustomerMessageAt.getTime() + 1, (ticket.lastAdminReplyAt?.getTime() ?? 0) + 1));
+        const message = await tx.supportMessage.create({ data: { ticketId: id, authorId: admin.id, authorName: admin.name, authorRole: "ADMIN", body: reply, createdAt } });
+        await tx.supportTicket.update({ where: { id }, data: { lastAdminReplyAt: message.createdAt } });
       }
-      await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "SUPPORT_UPDATED", entityType: "SUPPORT", entityId: id, details: { status: body.status, priority: body.priority ?? ticket.priority, assignedAdminId: assignee, replyAdded: !!reply && reply !== ticket.messages[0]?.body } } });
+      await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "SUPPORT_UPDATED", entityType: "SUPPORT", entityId: id, details: { status: body.status, priority: body.priority ?? ticket.priority, assignedAdminId: assignee, replyAdded: !!reply } } });
       return tx.supportTicket.findUnique({ where: { id } });
     });
     return result ? NextResponse.json({ ticket: result }) : NextResponse.json({ error: "This request has changed. Refresh before saving." }, { status: 409 });
