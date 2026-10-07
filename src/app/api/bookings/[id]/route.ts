@@ -1,9 +1,10 @@
+import { withRequestLog } from "@/lib/request-guard";
 import { recordBookingEvent } from "@/lib/booking-events";
 import { bookingView } from "@/lib/db-data";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentAdmin } from "@/lib/admin-access";
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const admin = await currentAdmin();
     if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,3 +24,5 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return result ? NextResponse.json({ booking: bookingView(result) }) : NextResponse.json({ error: "Booking is completed, cancelled, or no longer available." }, { status: 409 });
   } catch { return NextResponse.json({ error: "Couldn’t cancel the booking. Please retry." }, { status: 503 }); }
 }
+
+export const PATCH = withRequestLog("admin:bookings/[id]:PATCH", handlePATCH);

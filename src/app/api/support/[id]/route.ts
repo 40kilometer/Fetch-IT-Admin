@@ -1,7 +1,8 @@
+import { withRequestLog } from "@/lib/request-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { currentAdmin } from "@/lib/admin-access";
 import { db } from "@/lib/db";
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function handlePATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const admin = await currentAdmin();
     if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,3 +35,5 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return result ? NextResponse.json({ ticket: result }) : NextResponse.json({ error: "This request has changed. Refresh before saving." }, { status: 409 });
   } catch { return NextResponse.json({ error: "Couldn’t update the request. Please retry." }, { status: 503 }); }
 }
+
+export const PATCH = withRequestLog("admin:support/[id]:PATCH", handlePATCH);

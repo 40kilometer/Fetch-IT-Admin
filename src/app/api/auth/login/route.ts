@@ -1,15 +1,17 @@
+import { withRequestLog, RateLimitError, limitLogin, safeErrorCode } from "@/lib/request-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { createAdminSessionToken, setAdminSessionCookie } from "@/lib/session";
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
-    if (!email || !password) {
+    if (typeof email !== "string" || typeof password !== "string" || !email.trim() || email.length > 254 || !password || password.length > 128) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }
 
+    await limitLogin(req, "admin", String(email));
     const user = await db.user.findUnique({ where: { email: String(email).trim().toLowerCase() }, include: { authIdentities: { where: { provider: "PASSWORD" } } } });
 
     // Same error for "no such user" and "wrong password" — don't leak
@@ -24,7 +26,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
-    console.error("[admin login] error", err);
+    if (err instanceof RateLimitError) throw err;
+    console.error("[admin login] error", { code: safeErrorCode(err) });
     return NextResponse.json({ error: "Login failed." }, { status: 500 });
   }
 }
+
+export const POST = withRequestLog("admin:auth/login:POST", handlePOST);

@@ -1,3 +1,4 @@
+import { sessionSecret } from "./session-secret";
 // Session helper for the admin app. Same HMAC-signed cookie approach as
 // the main Fetch-It app, but its own cookie name and secret — this is a
 // separate deployment on a separate domain, so there's no reason to share
@@ -7,7 +8,6 @@ import { cookies } from "next/headers";
 import crypto from "crypto";
 
 const SESSION_COOKIE = "fetchit_admin_session";
-const SECRET = process.env.ADMIN_SESSION_SECRET || "fetch-it-admin-dev-secret-please-rotate";
 
 export interface AdminSessionPayload {
   uid: string;
@@ -27,7 +27,7 @@ function b64decode<T = unknown>(str: string): T | null {
   }
 }
 function sign(payloadStr: string): string {
-  return crypto.createHmac("sha256", SECRET).update(payloadStr).digest("base64url");
+  return crypto.createHmac("sha256", sessionSecret("ADMIN_SESSION_SECRET")).update(payloadStr).digest("base64url");
 }
 
 export function createAdminSessionToken(payload: Omit<AdminSessionPayload, "exp">): string {
@@ -40,11 +40,15 @@ export function createAdminSessionToken(payload: Omit<AdminSessionPayload, "exp"
 }
 
 export function verifyAdminSessionToken(token: string): AdminSessionPayload | null {
-  const [payloadStr, sig] = token.split(".");
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [payloadStr, sig] = parts;
   if (!payloadStr || !sig) return null;
-  if (sign(payloadStr) !== sig) return null;
+  const expected = Buffer.from(sign(payloadStr));
+  const received = Buffer.from(sig);
+  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) return null;
   const payload = b64decode<AdminSessionPayload>(payloadStr);
-  if (!payload || payload.exp < Date.now()) return null;
+  if (!payload || typeof payload.uid !== "string" || !payload.uid || typeof payload.email !== "string" || typeof payload.name !== "string" || !Number.isFinite(payload.exp) || payload.exp < Date.now()) return null;
   return payload;
 }
 
@@ -59,6 +63,7 @@ export async function setAdminSessionCookie(token: string): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 8,
