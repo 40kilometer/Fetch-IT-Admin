@@ -35,16 +35,14 @@ npx tsc --noEmit
 npm run build
 ```
 
-For the opt-in database/API check, start Admin on localhost:3002 with its configured `.env`, then run with Node 24:
-
-The legacy `operations.integration.cjs` runner still uses removed schema fields and needs updating before use. The current coordinated database/API check is `fetch-customer/tests/database-rebuild.integration.cjs`; see the customer database-rebuild guide. The command below is retained as a reference for the legacy runner.
+For the opt-in database/API check, build Admin first, then run with Node 24. Keep the sibling `fetch-customer` checkout available for the shared migrations:
 
 ```powershell
 $env:RUN_ADMIN_INTEGRATION='1'
 node tests/operations.integration.cjs
 ```
 
-The check creates disposable accounts, synthetic matched/terminal bookings (no open rider jobs), reviews, support requests and audit entries. It removes only its own fixtures. Checks cover active admin access, notification links, pagination, inclusive dates/CSV, attention queues, support assignment and reply history, stale/concurrent mutations, audits, rider profiles and reports.
+The check creates a temporary database schema, applies the shared migrations, starts its own Admin server on localhost:3222, and removes that schema when finished. Fixtures stay separate from the app's normal data. Checks cover active admin access, notification links, pagination, inclusive dates/CSV, attention queues, support assignment and reply history, stale/concurrent mutations, audits, rider profiles and reports. The coordinated three-app check is `fetch-customer/tests/database-rebuild.integration.cjs`.
 
 ## Run locally
 
