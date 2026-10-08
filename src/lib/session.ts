@@ -13,6 +13,7 @@ export interface AdminSessionPayload {
   uid: string;
   email: string;
   name: string;
+  iat?: number;
   exp: number;
 }
 
@@ -33,6 +34,7 @@ function sign(payloadStr: string): string {
 export function createAdminSessionToken(payload: Omit<AdminSessionPayload, "exp">): string {
   const fullPayload: AdminSessionPayload = {
     ...payload,
+    iat: Date.now(),
     exp: Date.now() + 1000 * 60 * 60 * 8, // 8 hours — shorter-lived than customer/rider sessions
   };
   const payloadStr = b64encode(fullPayload);
@@ -48,7 +50,7 @@ export function verifyAdminSessionToken(token: string): AdminSessionPayload | nu
   const received = Buffer.from(sig);
   if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) return null;
   const payload = b64decode<AdminSessionPayload>(payloadStr);
-  if (!payload || typeof payload.uid !== "string" || !payload.uid || typeof payload.email !== "string" || typeof payload.name !== "string" || !Number.isFinite(payload.exp) || payload.exp < Date.now()) return null;
+  if (!payload || typeof payload.uid !== "string" || !payload.uid || typeof payload.email !== "string" || typeof payload.name !== "string" || !Number.isFinite(payload.exp) || payload.exp < Date.now() || (payload.iat !== undefined && (!Number.isFinite(payload.iat) || payload.iat > Date.now()))) return null;
   return payload;
 }
 

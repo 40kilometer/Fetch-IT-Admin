@@ -12,16 +12,19 @@ async function handlePOST(req: NextRequest) {
     }
 
     await limitLogin(req, "admin", String(email));
-    const user = await db.user.findUnique({ where: { email: String(email).trim().toLowerCase() }, include: { authIdentities: { where: { provider: "PASSWORD" } } } });
-
-    // Same error for "no such user" and "wrong password" — don't leak
-    // which one it was. Also reject outright if the account isn't an
-    // admin, even with a correct password: this app is staff-only.
-    if (!user || user.role !== "ADMIN" || user.isBanned || !user.authIdentities[0]?.passwordHash || !verifyPassword(password, user.authIdentities[0].passwordHash)) {
-      return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
-    }
-
-    const token = createAdminSessionToken({ uid: user.id, email: user.email, name: user.name });
+    const result = await db.$transaction(async tx => {
+      const address = email.trim().toLowerCase();
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "email" = ${address} FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { email: address }, include: { authIdentities: { where: { provider: "PASSWORD" } } } });
+      if (!user || user.role !== "ADMIN" || user.isBanned || !user.authIdentities[0]?.passwordHash || !verifyPassword(password, user.authIdentities[0].passwordHash)) {
+        await tx.adminAudit.create({ data: { actorId: user?.role === "ADMIN" ? user.id : null, actorName: user?.role === "ADMIN" ? user.name : "Unknown account", action: "LOGIN_FAILED", entityType: "AUTH", entityId: user?.role === "ADMIN" ? user.id : "unknown", details: { result: "Invalid credentials" } } });
+        return null;
+      }
+      await tx.adminAudit.create({ data: { actorId: user.id, actorName: user.name, action: "LOGIN_SUCCEEDED", entityType: "AUTH", entityId: user.id, details: { result: "Signed in" } } });
+      return { user, token: createAdminSessionToken({ uid: user.id, email: user.email, name: user.name }) };
+    }, { maxWait: 10000, timeout: 20000 });
+    if (!result) return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
+    const { user, token } = result;
     await setAdminSessionCookie(token);
 
     return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } });

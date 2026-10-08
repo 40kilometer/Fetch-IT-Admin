@@ -1,3 +1,7 @@
+import { requireAdminPage } from "@/lib/admin-access";
+import { BookingControls } from "./booking-controls";
+import { PAYMENT_STATUS_LABEL } from "@/lib/payment-policy";
+import { expireRiderOffers } from "@/lib/dispatch";
 import { riderSelect } from "@/lib/db-data";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,15 +21,19 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminPage();
+  await expireRiderOffers(db);
   const { id } = await params;
   const booking = await db.booking.findUnique({
     where: { id },
-    include: { customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+    include: { paymentEvents: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 50 }, customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
   });
   if (!booking) notFound();
 
   const isFinal = booking.status === "DELIVERED" || booking.status === "CANCELLED";
   const isRide = booking.type === "RIDE";
+  const canAssign = ["PENDING", "MATCHED", "ACCEPTED"].includes(booking.status) && !booking.pickedUpAt && !booking.customerPaidAt && !booking.riderReceivedAt && !["PAID", "REFUNDED"].includes(booking.paymentStatus) && (!booking.scheduledAt || booking.scheduledAt <= new Date());
+  const riders = canAssign ? await db.user.findMany({ where: { role: "RIDER", isBanned: false, id: { not: booking.riderId ?? "" }, riderProfile: { vehicleClass: booking.vehicleClass }, riderPresence: { isOnline: true, updatedAt: { gte: new Date(Date.now() - 5 * 60_000) } }, bookingsAsRider: { none: { status: { in: ["MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
 
   return (
     <div>
@@ -83,6 +91,13 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <Row label="Base fare" value={`₱${booking.baseFare.toFixed(2)}`} />
           <Row label="Surge" value={`×${booking.surgeMultiplier.toFixed(1)}`} />
           <Row label="Total" value={`₱${booking.totalFare.toFixed(2)} ${booking.currency}`} />
+          <Row label="Payment method" value="Cash" />
+          <Row label="Payment status" value={PAYMENT_STATUS_LABEL[booking.paymentStatus]} />
+          <Row label="Customer confirmation" value={booking.customerPaidAt ? `₱${booking.customerPaidAmount?.toFixed(2)} · ${booking.customerPaidAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}` : "Not yet confirmed"} />
+          <Row label="Rider confirmation" value={booking.riderReceivedAt ? `₱${booking.riderReceivedAmount?.toFixed(2)} · ${booking.riderReceivedAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}` : "Not yet confirmed"} />
+          <Row label="Paid at" value={booking.paidAt?.toLocaleString("en-PH", { timeZone: "Asia/Manila" }) ?? "—"} />
+          <Row label="Payment reference" value={booking.paymentReference ?? "—"} />
+          {booking.cancellationReason && <Row label="Cancellation reason" value={booking.cancellationReason} />}
           <Row label="Created" value={new Date(booking.createdAt).toLocaleString()} />
           {booking.deliveredAt && <Row label="Completed" value={new Date(booking.deliveredAt).toLocaleString()} />}
           {booking.cancelledAt && <Row label="Cancelled" value={new Date(booking.cancelledAt).toLocaleString()} />}
@@ -109,6 +124,9 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
+      {booking.assignmentExpiresAt && <p className="muted small">Rider offer expires: {booking.assignmentExpiresAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</p>}
+      <BookingControls key={booking.updatedAt.toISOString()} id={booking.id} status={booking.status} paymentStatus={booking.paymentStatus} reference={booking.paymentReference} canAssign={canAssign} riders={riders} />
+      <section className="card" style={{ padding: 20, marginTop: 20 }}><h2>Payment history</h2>{booking.paymentEvents.map(event => <div className="detail-row" key={event.id}><span>{event.createdAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</span><span>{event.actorName} · {event.action.replaceAll("_", " ")} · {PAYMENT_STATUS_LABEL[event.toStatus]}{event.amount ? ` · ₱${event.amount.toFixed(2)}` : ""}{event.reason ? ` · ${event.reason}` : ""}{event.reference ? ` · ${event.reference}` : ""}</span></div>)}{!booking.paymentEvents.length && <p className="muted small">No payment confirmations yet.</p>}</section>
       <div style={{ marginTop: 20 }}>
         <CancelButton bookingId={booking.id} disabled={isFinal} />
         {isFinal && (

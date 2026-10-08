@@ -252,3 +252,7 @@ section[id^="ticket-"] { scroll-margin-top: 95px; }
 }
 @media (prefers-reduced-motion: reduce) { .admin-sidebar { transition: none; } }
 @media (max-width: 380px) { .filters { grid-template-columns: minmax(0,1fr); } }
+
+.login-spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: login-spin .8s linear infinite; }
+@keyframes login-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .login-spinner { animation: none; } }

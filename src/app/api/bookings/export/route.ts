@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
   });
 
   const rows = [
-    ["Reference", "Type", "Status", "Customer", "Rider", "Pickup", "Drop-off", "Scheduled at", "Created at", "Completed at", "Fare (PHP)"],
-    ...bookings.map((b) => [b.refCode, b.type, b.status, b.customer.name, b.rider?.name ?? "", b.pickupLabel, b.dropoffLabel, b.scheduledAt?.toISOString() ?? "", b.createdAt.toISOString(), b.deliveredAt?.toISOString() ?? "", b.totalFare.toFixed(2)]),
+    ["Reference", "Type", "Status", "Customer", "Rider", "Pickup", "Drop-off", "Scheduled at", "Created at", "Completed at", "Fare (PHP)", "Payment method", "Payment status", "Paid at", "Payment reference", "Cancellation reason"],
+    ...bookings.map((b) => [b.refCode, b.type, b.status, b.customer.name, b.rider?.name ?? "", b.pickupLabel, b.dropoffLabel, b.scheduledAt?.toISOString() ?? "", b.createdAt.toISOString(), b.deliveredAt?.toISOString() ?? "", b.totalFare.toFixed(2), b.paymentMethod, b.paymentStatus, b.paidAt?.toISOString() ?? "", b.paymentReference ?? "", b.cancellationReason ?? ""]),
   ];
   const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
   return new NextResponse(csv, {

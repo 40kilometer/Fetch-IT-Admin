@@ -15,12 +15,12 @@ async function handlePATCH(req: NextRequest, { params }: { params: Promise<{ id:
       await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${id} FOR UPDATE`;
       const before = await tx.booking.findUnique({ where: { id } });
       if (!before) return null;
-      const changed = await tx.booking.updateMany({ where: { id, status: { notIn: ["DELIVERED", "CANCELLED"] } }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+      const changed = await tx.booking.updateMany({ where: { id, status: { notIn: ["DELIVERED", "CANCELLED"] } }, data: { status: "CANCELLED", cancelledAt: new Date(), cancellationReason: body.reason.trim(), assignmentExpiresAt: null } });
       if (!changed.count) return null;
       await recordBookingEvent(tx, id, { uid: admin.id, name: admin.name, role: "ADMIN" }, { action: "CANCELLED", fromStatus: before.status, toStatus: "CANCELLED", riderId: before.riderId, reason: body.reason.trim() });
       await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "BOOKING_CANCELLED", entityType: "BOOKING", entityId: id, details: { reason: body.reason.trim() } } });
       return tx.booking.findUnique({ where: { id } });
-    });
+    }, { maxWait: 10000, timeout: 20000 });
     return result ? NextResponse.json({ booking: bookingView(result) }) : NextResponse.json({ error: "Booking is completed, cancelled, or no longer available." }, { status: 409 });
   } catch { return NextResponse.json({ error: "Couldn’t cancel the booking. Please retry." }, { status: 503 }); }
 }
