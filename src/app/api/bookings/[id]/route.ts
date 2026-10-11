@@ -4,6 +4,7 @@ import { bookingView } from "@/lib/db-data";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentAdmin } from "@/lib/admin-access";
+import { cancelDemoPayment } from "@/lib/demo-payments";
 async function handlePATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const admin = await currentAdmin();
@@ -17,6 +18,7 @@ async function handlePATCH(req: NextRequest, { params }: { params: Promise<{ id:
       if (!before) return null;
       const changed = await tx.booking.updateMany({ where: { id, status: { notIn: ["DELIVERED", "CANCELLED"] } }, data: { status: "CANCELLED", cancelledAt: new Date(), cancellationReason: body.reason.trim(), assignmentExpiresAt: null } });
       if (!changed.count) return null;
+      await cancelDemoPayment(tx, before, { uid: admin.id, name: admin.name, role: "ADMIN" });
       await recordBookingEvent(tx, id, { uid: admin.id, name: admin.name, role: "ADMIN" }, { action: "CANCELLED", fromStatus: before.status, toStatus: "CANCELLED", riderId: before.riderId, reason: body.reason.trim() });
       await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "BOOKING_CANCELLED", entityType: "BOOKING", entityId: id, details: { reason: body.reason.trim() } } });
       return tx.booking.findUnique({ where: { id } });
