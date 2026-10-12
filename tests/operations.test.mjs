@@ -30,7 +30,7 @@ test('stalled queue requires a rider, elapsed time and a due booking', () => {
   assert.equal(where.OR[1].scheduledAt.lte,now);
 });
 test('page links preserve every filter and reject invalid page values', () => {
-  const filters={q:'Main & First',from:'2026-10-01',to:'2026-10-03',type:'RIDE',status:'MATCHED',attention:'stalled'};
+  const filters={q:'Main & First',from:'2026-10-01',to:'2026-10-03',type:'RIDE',status:'MATCHED',paymentStatus:'PAID',attention:'stalled'};
   const query=new URLSearchParams(bookingQuery(filters,2));
   for(const [key,value] of Object.entries(filters)) assert.equal(query.get(key),value);
   assert.equal(query.get('page'),'2');
@@ -38,5 +38,5 @@ test('page links preserve every filter and reject invalid page values', () => {
   assert.equal(pageNumber('2'),2);
 });
 test('repeated or non-string query values are ignored safely', () => {
-  assert.deepEqual(normalizeFilters({q:['a','b'],page:[],status:{bad:true},from:'2026-10-03'}),{q:undefined,status:undefined,type:undefined,from:'2026-10-03',to:undefined,attention:undefined,page:undefined});
+  assert.deepEqual(normalizeFilters({q:['a','b'],page:[],status:{bad:true},paymentStatus:['PAID','UNPAID'],from:'2026-10-03'}),{q:undefined,status:undefined,paymentStatus:undefined,type:undefined,from:'2026-10-03',to:undefined,attention:undefined,page:undefined});
 });
