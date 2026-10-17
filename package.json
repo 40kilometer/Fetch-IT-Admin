@@ -17,13 +17,15 @@
     "nodemailer": "^10.0.16",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "3.6.4",
     "prisma": "^6.11.1",
     "typescript": "^5"
   }

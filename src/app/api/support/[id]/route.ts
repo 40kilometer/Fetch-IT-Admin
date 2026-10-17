@@ -2,6 +2,7 @@ import { withRequestLog } from "@/lib/request-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { currentAdmin } from "@/lib/admin-access";
 import { db } from "@/lib/db";
+import { enqueueSupportNotification } from "@/lib/customer-notifications";
 async function handlePATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const admin = await currentAdmin();
@@ -27,6 +28,7 @@ async function handlePATCH(request: NextRequest, { params }: { params: Promise<{
       if (reply) {
         const createdAt = new Date(Math.max(Date.now(), ticket.lastCustomerMessageAt.getTime() + 1, (ticket.lastAdminReplyAt?.getTime() ?? 0) + 1));
         const message = await tx.supportMessage.create({ data: { ticketId: id, authorId: admin.id, authorName: admin.name, authorRole: "ADMIN", body: reply, createdAt } });
+        await enqueueSupportNotification(tx, message);
         await tx.supportTicket.update({ where: { id }, data: { lastAdminReplyAt: message.createdAt } });
       }
       await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "SUPPORT_UPDATED", entityType: "SUPPORT", entityId: id, details: { status: body.status, priority: body.priority ?? ticket.priority, assignedAdminId: assignee, replyAdded: !!reply } } });
