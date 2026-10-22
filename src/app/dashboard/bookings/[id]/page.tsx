@@ -10,6 +10,7 @@ import { StatusBadge } from "../../status-badge";
 import { BOOKING_TYPE_LABEL, VEHICLE_LABEL } from "@/lib/constants";
 import { CancelButton } from "./cancel-button";
 import { BookingTimeline } from "../booking-timeline";
+import { DeliveryProofPhotos } from "@/components/delivery-proof-photos";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -26,7 +27,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const booking = await db.booking.findUnique({
     where: { id },
-    include: { paymentEvents: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 50 }, customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+    include: { deliveryProofs: { orderBy: { createdAt: "desc" } }, paymentEvents: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 50 }, customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
   });
   if (!booking) notFound();
 
@@ -60,6 +61,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <BookingTimeline booking={booking} />
+      <DeliveryProofPhotos bookingId={booking.id} proofs={booking.deliveryProofs} />
       {booking.events.length > 0 && <section className="card" style={{ padding: 20, marginBottom: 20 }}>
         <h2 style={{ fontSize: 15 }}>Booking history</h2>
         {booking.events.map(event => <div className="detail-row" key={event.id}>
