@@ -1,3 +1,4 @@
+import { riderCanTakeBooking } from "./rider-eligibility";
 import type { Booking, Prisma, PrismaClient } from "@prisma/client";
 import { isDemoPayment } from "./payment-policy";
 import { recordBookingEvent } from "./booking-events";
@@ -17,6 +18,7 @@ async function eligible(tx: Prisma.TransactionClient, riderId: string, booking: 
   await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${riderId} FOR UPDATE`;
   const rider = await tx.user.findUnique({ where: { id: riderId }, include: { riderProfile: true, riderPresence: true } });
   if (!rider || rider.role !== "RIDER" || rider.isBanned || rider.riderProfile?.vehicleClass !== booking.vehicleClass || !rider.riderPresence?.isOnline || rider.riderPresence.updatedAt.getTime() < now.getTime() - 5 * 60_000) return false;
+  if (!await riderCanTakeBooking(tx, riderId, booking)) return false;
   return await tx.booking.count({ where: { id: { not: booking.id }, riderId, status: { in: [...activeStatuses] } } }) === 0;
 }
 

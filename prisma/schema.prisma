@@ -133,12 +133,14 @@ model User {
   updatedAt         DateTime       @updatedAt
   ownerIdentity     OwnerIdentity?
 
-  authIdentities  AuthIdentity[]
-  riderProfile    RiderProfile?
-  riderPresence   RiderPresence?
-  bookingEvents   BookingEvent[]
-  supportMessages SupportMessage[]
-  adminAudits     AdminAudit[]
+  authIdentities   AuthIdentity[]
+  riderProfile     RiderProfile?
+  riderPresence    RiderPresence?
+  riderApplication RiderApplication?
+  riderApprovals   RiderServiceApproval[]
+  bookingEvents    BookingEvent[]
+  supportMessages  SupportMessage[]
+  adminAudits      AdminAudit[]
 
   bookingsAsCustomer     Booking[]                  @relation("CustomerBookings")
   bookingsAsRider        Booking[]                  @relation("RiderBookings")
@@ -155,18 +157,18 @@ model User {
 
 // Owner authentication is deliberately separate from staff password identities.
 model OwnerIdentity {
-  id          String            @id @default(cuid())
-  actorId     String            @unique
-  name        String
-  email       String            @unique
-  active      Boolean           @default(true)
-  passwordHash String?
+  id                String            @id @default(cuid())
+  actorId           String            @unique
+  name              String
+  email             String            @unique
+  active            Boolean           @default(true)
+  passwordHash      String?
   passwordChangedAt DateTime?
-  createdAt   DateTime          @default(now())
-  actor       User              @relation(fields: [actorId], references: [id])
-  credentials OwnerCredential[]
-  sessions    OwnerSession[]
-  invitations OwnerInvitation[]
+  createdAt         DateTime          @default(now())
+  actor             User              @relation(fields: [actorId], references: [id])
+  credentials       OwnerCredential[]
+  sessions          OwnerSession[]
+  invitations       OwnerInvitation[]
 }
 
 model OwnerCredential {
@@ -592,6 +594,106 @@ model RiderProfile {
   totalDeliveries Int          @default(0)
   updatedAt       DateTime     @updatedAt
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RiderApplication {
+  id                      String                     @id @default(cuid())
+  userId                  String                     @unique
+  status                  String                     @default("DRAFT")
+  vehicleClass            VehicleClass
+  services                BookingType[]
+  fields                  Json                       @default("{}")
+  fieldReviews            Json                       @default("{}")
+  emailVerifiedAt         DateTime?
+  verifiedEmail           String?
+  assignedToId            String?
+  recommendedById         String?
+  recommendedAt           DateTime?
+  orientationAt           DateTime?
+  orientationVenue        String?
+  orientationInstructions String?
+  attendedAt              DateTime?
+  assessmentPassedAt      DateTime?
+  assessmentNotes         String?
+  assessedById            String?
+  version                 Int                        @default(1)
+  submittedAt             DateTime?
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
+  user                    User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents               RiderApplicationDocument[]
+  events                  RiderApplicationEvent[]
+  emails                  RiderApplicationEmail[]
+
+  @@index([status, updatedAt])
+}
+
+model RiderApplicationDocument {
+  id            String           @id @default(cuid())
+  applicationId String
+  kind          String
+  version       Int
+  current       Boolean          @default(true)
+  pathname      String
+  mimeType      String
+  status        String           @default("PENDING")
+  reason        String?
+  issuedAt      DateTime?
+  expiresAt     DateTime?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  application   RiderApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, kind, version])
+  @@index([applicationId, current])
+}
+
+model RiderApplicationEvent {
+  id            String           @id @default(cuid())
+  applicationId String
+  actorId       String
+  actorName     String
+  action        String
+  details       Json
+  createdAt     DateTime         @default(now())
+  application   RiderApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+}
+
+model RiderServiceApproval {
+  id            String       @id @default(cuid())
+  userId        String
+  vehicleClass  VehicleClass
+  service       BookingType
+  source        String
+  operatingZone Json?
+  approvedById  String?
+  approvedAt    DateTime     @default(now())
+  validUntil    DateTime?
+  revokedAt     DateTime?
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vehicleClass, service])
+}
+
+model RiderApplicationEmail {
+  id            String           @id @default(cuid())
+  sourceId      String           @unique
+  applicationId String
+  kind          String
+  recipient     String
+  payload       Json
+  status        String           @default("PENDING")
+  attempts      Int              @default(0)
+  startedAt     DateTime?
+  sentAt        DateTime?
+  failureCode   String?
+  createdAt     DateTime         @default(now())
+  application   RiderApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
 }
 
 model RiderPresence {
