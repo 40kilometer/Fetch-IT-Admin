@@ -40,3 +40,10 @@ test('page links preserve every filter and reject invalid page values', () => {
 test('repeated or non-string query values are ignored safely', () => {
   assert.deepEqual(normalizeFilters({q:['a','b'],page:[],status:{bad:true},paymentStatus:['PAID','UNPAID'],from:'2026-10-03'}),{q:undefined,status:undefined,paymentStatus:undefined,type:undefined,from:'2026-10-03',to:undefined,attention:undefined,page:undefined});
 });
+
+test('active overview drill-down includes every live booking state and no terminal states', () => {
+  const where = bookingWhere({status:'ACTIVE'});
+  assert.deepEqual(where.AND[0].status.in, ACTIVE_STATUSES);
+  assert(!where.AND[0].status.in.includes('DELIVERED'));
+  assert(!where.AND[0].status.in.includes('CANCELLED'));
+});

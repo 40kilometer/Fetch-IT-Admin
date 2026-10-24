@@ -29,8 +29,10 @@ The initial versioned migration creates the rebuilt schema, including support me
 
 ### Verification
 
+Admin UI updates include searchable and paginated customer/rider directories, customer profiles, complete review queues with priority sorting, valid case actions, and paginated support messages and notes. Public replies and request updates are separate actions. The overview uses a shared Today / 7-day / 30-day period for activity; live counts remain explicitly labelled. Navigation is grouped by work area, with a keyboard-contained mobile drawer and accessible confirmation dialogs.
+
 ```powershell
-node --experimental-strip-types --test tests/operations.test.mjs
+node --experimental-strip-types --test tests/operations.test.mjs tests/admin-ux.test.mjs tests/admin-ux.render.test.cjs tests/platform-policy.test.cjs
 npx tsc --noEmit
 npm run build
 ```
@@ -43,6 +45,8 @@ node tests/operations.integration.cjs
 ```
 
 The check creates a temporary database schema, applies the shared migrations, starts its own Admin server on localhost:3222, and removes that schema when finished. Fixtures stay separate from the app's normal data. Checks cover active admin access, notification links, pagination, inclusive dates/CSV, attention queues, support assignment and reply history, stale/concurrent mutations, audits, rider profiles and reports. The coordinated three-app check is `fetch-customer/tests/database-rebuild.integration.cjs`.
+
+The Admin check also covers account profiles and filters, more than 100 review cases, long conversations and notes, and independent approval guidance. On Windows environments that block Turbopack junctions, use `npm run dev -- --webpack` or `npm run build -- --webpack`.
 
 ## Run locally
 

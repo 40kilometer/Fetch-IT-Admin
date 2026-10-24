@@ -25,7 +25,7 @@ export function bookingWhere(filters: BookingFilters, now = new Date()): Prisma.
     : filters.attention === "stalled" ? { riderId: { not: null }, status: { in: ["MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] }, updatedAt: { lte: new Date(now.getTime() - 30 * 60000) }, OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }] } : undefined;
   return { AND: [
     ...(attention ? [attention] : []),
-    ...(filters.status && statuses.includes(filters.status as BookingStatus) ? [{ status: filters.status as BookingStatus }] : []),
+    ...(filters.status === "ACTIVE" ? [{ status: { in: ACTIVE_STATUSES } }] : filters.status && statuses.includes(filters.status as BookingStatus) ? [{ status: filters.status as BookingStatus }] : []),
     ...(filters.paymentStatus && ["UNPAID", "PENDING", "PAID", "REFUNDED", "FAILED"].includes(filters.paymentStatus) ? [{ paymentStatus: filters.paymentStatus as PaymentStatus }] : []),
     ...(filters.type === "DELIVERY" || filters.type === "RIDE" ? [{ type: filters.type as BookingType }] : []),
     ...(dates.gte || dates.lte ? [{ createdAt: dates }] : []),

@@ -2,7 +2,9 @@ import { withRequestLog, RateLimitError, limitLogin, safeErrorCode } from "@/lib
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
-import { createAdminSessionToken, setAdminSessionCookie } from "@/lib/session";
+import { createAdminSessionToken, setAdminSessionCookie, verifyAdminSessionToken } from "@/lib/session";
+import { isStaffRole } from "@/lib/staff-policy";
+import {assertRuntimeAccess} from '@/lib/runtime-access';
 
 async function handlePOST(req: NextRequest) {
   try {
@@ -12,16 +14,20 @@ async function handlePOST(req: NextRequest) {
     }
 
     await limitLogin(req, "admin", String(email));
+    await assertRuntimeAccess('staff');
     const result = await db.$transaction(async tx => {
       const address = email.trim().toLowerCase();
       await tx.$queryRaw`SELECT "id" FROM "User" WHERE "email" = ${address} FOR UPDATE`;
       const user = await tx.user.findUnique({ where: { email: address }, include: { authIdentities: { where: { provider: "PASSWORD" } } } });
-      if (!user || user.role !== "ADMIN" || user.isBanned || !user.authIdentities[0]?.passwordHash || !verifyPassword(password, user.authIdentities[0].passwordHash)) {
+      if (!user || !isStaffRole(user.role) || user.isBanned || !user.authIdentities[0]?.passwordHash || !verifyPassword(password, user.authIdentities[0].passwordHash)) {
         await tx.adminAudit.create({ data: { actorId: user?.role === "ADMIN" ? user.id : null, actorName: user?.role === "ADMIN" ? user.name : "Unknown account", action: "LOGIN_FAILED", entityType: "AUTH", entityId: user?.role === "ADMIN" ? user.id : "unknown", details: { result: "Invalid credentials" } } });
         return null;
       }
       await tx.adminAudit.create({ data: { actorId: user.id, actorName: user.name, action: "LOGIN_SUCCEEDED", entityType: "AUTH", entityId: user.id, details: { result: "Signed in" } } });
-      return { user, token: createAdminSessionToken({ uid: user.id, email: user.email, name: user.name }) };
+      const token=createAdminSessionToken({ uid:user.id,email:user.email,name:user.name });
+      const payload=verifyAdminSessionToken(token)!;
+      await tx.staffSession.create({data:{id:payload.sid!,userId:user.id,expiresAt:new Date(payload.exp)}});
+      return {user,token};
     }, { maxWait: 10000, timeout: 20000 });
     if (!result) return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
     const { user, token } = result;

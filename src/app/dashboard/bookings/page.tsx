@@ -2,11 +2,13 @@ import { PAYMENT_METHOD_LABEL } from "@/lib/payment-policy";
 import { PAYMENT_STATUS_LABEL } from "@/lib/payment-policy";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { requireAdminPage } from "@/lib/admin-access";
 import { BOOKING_STATUS_LABEL, BOOKING_TYPE_LABEL } from "@/lib/constants";
 import { bookingWhere, bookingQuery, pageNumber, PAGE_SIZE, normalizeFilters, type BookingFilters } from "@/lib/operations";
 import { StatusBadge } from "../status-badge";
 
 export default async function BookingsPage({ searchParams }: { searchParams: Promise<BookingFilters> }) {
+  await requireAdminPage();
   const filters = normalizeFilters(await searchParams);
   let error = "";
   let where;
@@ -19,10 +21,10 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
   return <div>
     <div className="page-heading"><div><div className="eyebrow">BOOKING MANAGEMENT</div><h1>Bookings</h1><p className="muted small">Find a booking, review its progress, and resolve exceptions.</p></div><a className="btn" href={`/api/bookings/export?${bookingQuery(filters)}`}>Export CSV</a></div>
     {attention && <p className="muted small">Attention filter: {attention}. <Link href="/dashboard/bookings">Show all bookings →</Link></p>}
-    <form className="card filters">
+    <form key={bookingQuery(filters)} className="card filters">
       {attention && <input type="hidden" name="attention" value={filters.attention} />}
       <label>Search bookings<input className="input" name="q" defaultValue={filters.q} placeholder="Reference or address" maxLength={100} /></label>
-      <label>Status<select className="input" name="status" defaultValue={filters.status ?? ""}><option value="">All statuses</option>{Object.entries(BOOKING_STATUS_LABEL).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>Status<select className="input" name="status" defaultValue={filters.status ?? ""}><option value="">All statuses</option><option value="ACTIVE">Active bookings</option>{Object.entries(BOOKING_STATUS_LABEL).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>Payment status<select className="input" name="paymentStatus" defaultValue={filters.paymentStatus ?? ""}><option value="">All payment statuses</option>{Object.entries(PAYMENT_STATUS_LABEL).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>Service<select className="input" name="type" defaultValue={filters.type ?? ""}><option value="">All services</option><option value="DELIVERY">Delivery</option><option value="RIDE">Ride</option></select></label>
       <label>From date<input className="input" type="date" name="from" defaultValue={filters.from} /></label>

@@ -4,8 +4,9 @@ import { db } from "./db";
 import { consumeEmailCode, issueEmailCode, EMAIL_CODE_TTL_MS } from "./auth-email-code";
 import { requireEmailCodeSender, sendAuthEmailCode } from "./auth-email-sender";
 import { clientAddress, limitRequests } from "./request-guard";
-import { validNewPassword, PASSWORD_REQUIREMENT } from "./password-policy";
+import { validNewPassword, PASSWORD_REQUIREMENT } from "./staff-password-policy";
 import { hashPassword } from "./password";
+import { isStaffRole, STAFF_ROLES } from "./staff-policy";
 
 export async function adminPasswordReset(req: NextRequest, action: "send" | "reset") {
   const origin = req.headers.get("origin");
@@ -22,7 +23,7 @@ export async function adminPasswordReset(req: NextRequest, action: "send" | "res
     await limitRequests("email-code:daily-sends", "gmail", 200, 24 * 60 * 60_000);
     const user = await db.user.findUnique({ where: { email }, include: { authIdentities: true } });
     let challenge = { id: randomUUID(), expiresAt: new Date(Date.now() + EMAIL_CODE_TTL_MS) };
-    if (user?.role === "ADMIN" && !user.isBanned && user.authIdentities.some(identity => identity.provider === "PASSWORD" && identity.passwordHash)) {
+    if (user && isStaffRole(user.role) && !user.isBanned && user.authIdentities.some(identity => identity.provider === "PASSWORD" && identity.passwordHash)) {
       const issued = await issueEmailCode("ADMIN_RESET_PASSWORD", { email, subjectId: user.id, provider: "PASSWORD" });
       challenge = issued;
       try { await sendAuthEmailCode(email, "ADMIN_RESET_PASSWORD", issued.code); }
@@ -40,7 +41,7 @@ export async function adminPasswordReset(req: NextRequest, action: "send" | "res
   if (!challenge || challenge.provider !== "PASSWORD") return invalid();
   const changed = await db.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${challenge.subjectId} FOR UPDATE`;
-    const result = await tx.authIdentity.updateMany({ where: { userId: challenge.subjectId, provider: "PASSWORD", user: { email: challenge.email, role: "ADMIN", isBanned: false } }, data: { passwordHash: hashPassword(body.password) } });
+    const result = await tx.authIdentity.updateMany({ where: { userId: challenge.subjectId, provider: "PASSWORD", user: { email: challenge.email, role: {in:[...STAFF_ROLES]}, isBanned: false } }, data: { passwordHash: hashPassword(body.password) } });
     if (result.count === 1) {
       const user = await tx.user.update({ where: { id: challenge.subjectId }, data: { authInvalidBefore: new Date() } });
       await tx.adminAudit.create({ data: { actorId: user.id, actorName: user.name, action: "PASSWORD_RESET", entityType: "USER", entityId: user.id, details: { method: "Email code" } } });

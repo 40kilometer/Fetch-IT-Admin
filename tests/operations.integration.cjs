@@ -20,11 +20,11 @@ let server, ownsSchema = false;
 const fixture = {marker:'ops-check-'+crypto.randomUUID(),users:[],bookings:[]};
 const password='Disposable-UI-Check-2026!';
 function cookie(user) {
-  const payload=Buffer.from(JSON.stringify({uid:user.id,email:user.email,name:user.name,exp:Date.now()+600000})).toString('base64url');
+  const payload=Buffer.from(JSON.stringify({uid:user.id,sid:user.id,email:user.email,name:user.name,iat:Date.now(),exp:Date.now()+600000})).toString('base64url');
   return 'fetchit_admin_session='+payload+'.'+crypto.createHmac('sha256',sessionSecret).update(payload).digest('base64url');
 }
 async function request(path,token,expected=200,method="GET",data) {
-  const res=await fetch(`http://localhost:${port}`+path,{method,headers:{...(token?{cookie:token}:{}),'Content-Type':'application/json'},...(data?{body:JSON.stringify(data)}:{}),redirect:'manual',signal:AbortSignal.timeout(30000)});
+  const res=await fetch(`http://localhost:${port}`+path,{method,headers:{...(token?{cookie:token}:{}),'Content-Type':'application/json',origin:`http://localhost:${port}`},...(data?{body:JSON.stringify(data)}:{}),redirect:'manual',signal:AbortSignal.timeout(90000)});
   const body=await res.text(); assert.equal(res.status,expected,body.slice(0,150));
   return res.headers.get('content-type')?.includes('application/json')?JSON.parse(body):body;
 }
@@ -40,8 +40,8 @@ async function prepare() {
     assert(/^fetch_[a-z_]+$/.test(fn.name));
     await db.$executeRawUnsafe(`ALTER FUNCTION "${schema}"."${fn.name}"() SET search_path TO "${schema}", pg_catalog`);
   }
-  server = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', String(port)], {
-    cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl, ADMIN_SESSION_SECRET: sessionSecret }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'dev', '--webpack', '-p', String(port)], {
+    cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl, ADMIN_SESSION_SECRET: sessionSecret, NODE_ENV:'development' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.resume(); server.stderr.resume();
   for (let attempt = 0; attempt < 60; attempt++) {
     assert.equal(server.exitCode, null, 'Admin test server must stay running.');
@@ -56,6 +56,7 @@ async function user(role) {
   const saved=await db.user.create({data:{name:'Operations check',email,role,
     authIdentities:{create:{provider:'PASSWORD',providerUserId:email,passwordHash:salt+':'+crypto.scryptSync(password,salt,64).toString('hex')}},
     ...(role==='RIDER'?{riderProfile:{create:{vehicleClass:'TRICYCLE'}},riderPresence:{create:{isOnline:true}}}:{})}});
+  await db.staffSession.create({data:{id:saved.id,userId:saved.id,expiresAt:new Date(Date.now()+600000)}});
   fixture.users.push(saved.id); return saved;
 }
 (async()=>{
@@ -123,6 +124,24 @@ async function user(role) {
     const profile=await request('/dashboard/riders/'+rider.id,token);assert(profile.includes('Current assignments'));assert(profile.includes('Disposable rider profile review'));assert(profile.includes('Last location update'));
     const reports=await request(`/dashboard/reports?from=${date}&to=${date}`,token);assert(reports.includes('Rider performance'));assert(reports.includes('Cancellation rate'));assert(reports.includes('Completed fare total by booking date'));
     const invalid=await request('/dashboard/reports?from=2026-02-30&to=2026-10-03',token);assert(invalid.includes('Choose valid dates.'));
+    // UI regressions use the same isolated schema as the existing operations checks.
+    await db.user.createMany({data:Array.from({length:27},(_,index)=>({name:'Directory customer '+index,email:fixture.marker+'-directory-'+index+'@example.invalid',role:'CUSTOMER',isBanned:index===26}))});
+    const directory=await request('/dashboard/customers?q='+fixture.marker+'-directory&page=2',token);
+    assert(directory.includes('27'));assert(directory.includes('Page <!-- -->2<!-- --> of <!-- -->2'));assert(directory.includes('View profile'));
+    const restricted=await request('/dashboard/customers?q='+fixture.marker+'-directory&status=restricted',token);assert(restricted.includes('Directory customer 26'));assert(!restricted.includes('>Directory customer 0<'));
+    const customerProfile=await request('/dashboard/customers/'+customer.id,token);assert(customerProfile.includes('Booking history'));assert(customerProfile.includes('Support history'));
+    const olderCustomerBookings=await request('/dashboard/customers/'+customer.id+'?page=2',token);assert((customerProfile+olderCustomerBookings).includes(rows[0].refCode));
+    const messageStart=Date.now()+1000;
+    await db.supportMessage.createMany({data:Array.from({length:251},(_,index)=>({ticketId:ticket.id,authorId:customer.id,authorName:customer.name,authorRole:'CUSTOMER',body:'Long conversation message '+index,createdAt:new Date(messageStart+index)}))});
+    await db.supportInternalNote.createMany({data:Array.from({length:106},(_,index)=>({ticketId:ticket.id,authorId:admin.id,authorName:admin.name,body:'Long internal note '+index,createdAt:new Date(messageStart+index)}))});
+    const latest=await request('/dashboard/support/'+ticket.id,token);assert(latest.includes('Long conversation message 250'));assert(latest.includes('Long internal note 105'));assert(latest.includes('Earlier messages'));assert(latest.includes('Earlier notes'));
+    const earlier=await request('/dashboard/support/'+ticket.id+'?page=6&notes=5',token);assert(earlier.includes('Previous fixture reply'));assert(earlier.includes('Long internal note 0'));assert(earlier.includes('Jump to latest messages'));
+    await db.workflowCase.createMany({data:Array.from({length:112},(_,index)=>({title:fixture.marker+' review '+index,summary:'Disposable queue pagination',kind:'FINANCE',priority:index===111?'URGENT':'NORMAL',createdById:admin.id,createdByName:admin.name,createdAt:new Date(messageStart+index)}))});
+    const reviewQueue=await request('/dashboard/cases?q='+fixture.marker,token);assert(reviewQueue.includes(fixture.marker+' review 111'));assert(reviewQueue.includes('112'));assert(reviewQueue.includes('Highest priority'));
+    const lastReviewPage=await request('/dashboard/cases?q='+fixture.marker+'&page=5',token);assert(lastReviewPage.includes('Page <!-- -->5<!-- --> of <!-- -->5'));
+    const selfReview=await db.workflowCase.create({data:{title:'Independent approval regression',summary:'Disposable',kind:'FINANCE',status:'AWAITING_ADMIN',assignedToId:admin.id,createdById:admin.id,createdByName:admin.name}});
+    const selfPage=await request('/dashboard/cases/'+selfReview.id,token);assert(selfPage.includes('Waiting for a different administrator'));assert(!selfPage.includes('Record decision'));
+    const period=await request('/dashboard?period=7',token);assert(period.includes('Activity'));assert(period.includes('Last 7 days'));assert(period.includes('Live platform status'));
     console.log('PASS: admin permissions, notifications, pagination, dates/exports, attention, support assignment and preserved replies, concurrency checks, atomic audits, rider profiles and reports.');
   } finally {
     if (server) server.kill();

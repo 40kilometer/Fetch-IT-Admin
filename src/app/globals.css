@@ -1,11 +1,11 @@
 :root {
-  --orange: #ea580c;
-  --orange-dark: #c2410c;
-  --bg: #faf7f2;
+  --orange: #c2410c;
+  --orange-dark: #9a3412;
+  --bg: #f7f8fa;
   --surface: #ffffff;
-  --border: #e7e2d8;
-  --text: #1c1917;
-  --text-muted: #78716c;
+  --border: #e8eaed;
+  --text: #193c34;
+  --text-muted: #52665f;
   --green: #16a34a;
   --red: #dc2626;
   --amber: #d97706;
@@ -117,7 +117,6 @@ tr:hover td { background: #fafaf9; }
 .sidebar-link.active { background: #fff1e8; color: var(--orange-dark); }
 
 /* Operations layout */
-:root { --bg: #f7f8fa; --border: #e8eaed; --text: #193c34; --text-muted: #687c76; }
 h1, h2, h3, p { overflow-wrap: anywhere; }
 h1 { font-size: 28px; letter-spacing: -.7px; }
 h2 { font-size: 18px; margin: 0; }
@@ -256,3 +255,88 @@ section[id^="ticket-"] { scroll-margin-top: 95px; }
 .login-spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: login-spin .8s linear infinite; }
 @keyframes login-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .login-spinner { animation: none; } }
+.staff-form { padding: 22px; display: grid; gap: 16px; margin: 18px 0; }
+.staff-form label { display: grid; gap: 7px; }
+.staff-form textarea { min-height: 110px; }
+.staff-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
+.staff-stat { padding: 22px; }
+.staff-stat strong { font-size: 30px; }
+.preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Shared staff interface */
+body { line-height: 1.5; }
+h1 { margin: 0 0 20px; font-size: 28px; font-weight: 650; line-height: 1.2; }
+h2 { line-height: 1.35; }
+.btn { min-height: 40px; justify-content: center; }
+.input { min-height: 42px; }
+textarea.input { resize: vertical; }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 16px; }
+legend { font-weight: 650; padding: 0 0 12px; }
+fieldset:disabled { opacity: .65; }
+.staff-form { align-content: start; }
+.staff-form > .btn { justify-self: start; }
+.staff-form fieldset { display: grid; gap: 16px; }
+.dialog-reason, .support-reply form label { display: grid; gap: 8px; }
+.confirm-dialog p { line-height: 1.6; }
+.success-message { padding: 12px 14px; border-radius: 10px; border: 1px solid #bbf7d0; color: #166534; background: #f0fdf4; }
+.section-block { margin-top: 28px; scroll-margin-top: 95px; }
+.section-block > h2 { margin-bottom: 16px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.queue-tabs, .row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.queue-tabs { margin: 0 0 18px; }
+.section-heading .queue-tabs { margin: 0; }
+.text-link { color: var(--orange-dark); text-decoration: underline; text-underline-offset: 3px; }
+.back-link { display: inline-block; margin-bottom: 20px; color: var(--text-muted); }
+.workflow-summary { padding: 20px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; }
+.live-stat-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 16px; }
+.directory-filters { grid-template-columns: minmax(180px,2fr) minmax(140px,1fr); }
+.restriction-reason { max-width: 240px; overflow-wrap: anywhere; }
+.sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.admin-sidebar { width: 248px; padding: 24px 16px 20px; gap: 24px; }
+.admin-sidebar nav { gap: 22px; }
+.nav-group { display: grid; gap: 3px; }
+.nav-group-label { margin: 0 12px 6px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); }
+.sidebar-link { padding: 10px 12px; line-height: 1.35; }
+.sidebar-link svg { flex-shrink: 0; }
+.sidebar-account { padding: 16px 8px 0; }
+.sidebar-account summary { cursor: pointer; }
+.account-name { font-weight: 650; margin-right: 8px; }
+.sidebar-account summary .small { display: block; }
+.admin-avatar:hover { outline: 2px solid var(--orange); }
+.skip-link { position: fixed; top: -100px; left: 16px; z-index: 60; background: white; padding: 12px 18px; border: 2px solid var(--orange); border-radius: 8px; }
+.skip-link:focus { top: 12px; }
+.original-request { margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.original-request summary { cursor: pointer; font-size: 13px; }
+#conversation, #internal-notes { scroll-margin-top: 95px; }
+.conversation-message time { color: var(--text-muted); font-size: 12px; }
+.support-detail { align-items: start; }
+.message-thread { max-height: min(60dvh,600px); overflow-y: auto; overscroll-behavior: contain; padding: 0 4px 4px; margin-top: 12px; scrollbar-gutter: stable; }
+.message-thread > .conversation-message:first-child { margin-top: 0; }
+.message-thread:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; border-radius: 8px; }
+.support-reply { margin-top: 20px; gap: 24px; }
+.support-controls { grid-template-columns: minmax(0,1fr); }
+.staff-stat p { margin: 0 0 8px; }
+.staff-stat strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.table-card th:last-child { min-width: 120px; }
+.detail-grid section > form { display: grid; gap: 14px; margin-top: 18px; }
+.detail-grid section > form label { display: grid; gap: 7px; font-size: 14px; }
+.staff-stat > .small { display: block; margin-top: 10px; }
+@media (max-width: 760px) {
+  .admin-sidebar { width: min(300px,90vw); }
+  .btn { min-height: 44px; }
+  .admin-main h1 { font-size: 25px; }
+  .admin-main .table-card:has(table.responsive-table) { overflow: visible; }
+  .admin-main .table-card table.responsive-table { min-width: 0; }
+  .responsive-table thead { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+  .responsive-table, .responsive-table tbody, .responsive-table tr, .responsive-table td { display: block; width: 100%; }
+  .responsive-table tr { padding: 14px; border-bottom: 1px solid var(--border); }
+  .responsive-table tr:last-child { border-bottom: 0; }
+  .responsive-table td { display: grid; grid-template-columns: 95px minmax(0,1fr); gap: 6px 12px; padding: 8px 0; border: 0; overflow-wrap: anywhere; }
+  .responsive-table td::before { content: attr(data-label); color: var(--text-muted); font-size: 12px; }
+  .responsive-table td > .muted, .responsive-table td > .restriction-reason { grid-column: 2; }
+  .responsive-table td .badge { justify-self: start; }
+  .responsive-table .row-actions { align-items: stretch; }
+  .directory-filters, .live-stat-grid { grid-template-columns: minmax(0,1fr); }
+  .support-controls { grid-template-columns: minmax(0,1fr); }
+  .queue-tabs { gap: 6px; }
+}

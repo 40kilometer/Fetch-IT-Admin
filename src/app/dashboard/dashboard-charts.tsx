@@ -17,12 +17,12 @@ import {
 } from "recharts";
 
 const COLORS = {
-  orange: "#ea580c",
+  orange: "#c2410c",
   green: "#16a34a",
   red: "#dc2626",
   amber: "#d97706",
   blue: "#2563eb",
-  gray: "#78716c",
+  gray: "#52665f",
   border: "#e7e2d8",
   text: "#1c1917",
 };
@@ -95,6 +95,7 @@ export function DashboardCharts({
             <YAxis tick={{ fontSize: 11, fill: COLORS.gray }} axisLine={false} tickLine={false} allowDecimals={false} width={28} />
             <Tooltip contentStyle={tooltipStyle} />
             <Area
+              dot={days.length === 1}
               type="monotone"
               dataKey="bookings"
               name="Bookings"

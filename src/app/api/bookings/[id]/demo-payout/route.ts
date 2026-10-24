@@ -10,7 +10,7 @@ async function post(req: NextRequest, { params }: { params: Promise<{ id: string
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Demo payout details required." }, { status: 400 });
   try {
-    await recordDemoPayout(db, (await params).id, { uid: admin.id, name: admin.name, role: "ADMIN" }, body);
+    await recordDemoPayout(db, (await params).id, { uid: admin.id, name: admin.name, role: admin.role === "SUPERADMIN" ? "SUPERADMIN" : "ADMIN" }, body);
     return NextResponse.json({ message: "Demo payout recorded. No real money moved." });
   } catch (error) {
     return NextResponse.json({ error: error instanceof PaymentError ? error.message : "Demo payout unavailable. Please retry." }, { status: error instanceof PaymentError ? error.status : 503 });

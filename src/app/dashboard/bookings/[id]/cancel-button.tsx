@@ -1,36 +1,10 @@
 "use client";
-
-import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-export function CancelButton({ bookingId, disabled }: { bookingId: string; disabled: boolean }) {
+import { ConfirmDialog } from "@/components/confirm-dialog";
+export function CancelButton({ bookingId, disabled, reference = bookingId }: { bookingId: string; disabled: boolean; reference?: string }) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-
-  async function handleCancel() {
-    const reason = prompt("Why is this booking being cancelled? (Recorded in the audit log)");
-    if (reason === null) return;
-    if (!reason.trim() || reason.length > 500) { alert("Add a reason of up to 500 characters."); return; }
-    if (!confirm("Force-cancel this booking? This cannot be undone.")) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/bookings/${bookingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "cancel", reason }),
-      });
-      if (!res.ok) throw new Error("Failed to cancel.");
-      router.refresh();
-    } catch {
-      alert("Could not cancel this booking.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <button className="btn btn-danger" onClick={handleCancel} disabled={disabled || loading}>
-      {loading ? "Cancelling…" : "Force-cancel booking"}
-    </button>
-  );
+  return <ConfirmDialog trigger="Cancel booking" title={`Cancel booking ${reference}?`} description="This ends the booking and cannot be undone. Review the booking’s payment record for any refund follow-up. Your reason is recorded in the audit log." confirmLabel="Cancel booking" reasonLabel="Cancellation reason" danger disabled={disabled} onConfirm={async reason => {
+    const response = await fetch(`/api/bookings/${bookingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancel", reason }) });
+    const data = await response.json(); if (!response.ok) throw new Error(data.error || "Could not cancel this booking."); router.refresh();
+  }} />;
 }

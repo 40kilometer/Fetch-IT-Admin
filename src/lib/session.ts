@@ -11,6 +11,7 @@ const SESSION_COOKIE = "fetchit_admin_session";
 
 export interface AdminSessionPayload {
   uid: string;
+  sid?: string;
   email: string;
   name: string;
   iat?: number;
@@ -34,6 +35,7 @@ function sign(payloadStr: string): string {
 export function createAdminSessionToken(payload: Omit<AdminSessionPayload, "exp">): string {
   const fullPayload: AdminSessionPayload = {
     ...payload,
+    sid: crypto.randomUUID(),
     iat: Date.now(),
     exp: Date.now() + 1000 * 60 * 60 * 8, // 8 hours — shorter-lived than customer/rider sessions
   };

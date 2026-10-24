@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { currentAdmin } from "@/lib/admin-access";
 import { db } from "@/lib/db";
+import { currentStaff } from "@/lib/staff-access";
+import { caseScope,hasPermission,supportScope } from "@/lib/staff-policy";
 export async function GET() {
   try {
-    if (!await currentAdmin()) return NextResponse.json({ error: "Sign in with an active admin account." }, { status: 401 });
+    const staff=await currentStaff();
+    if (!staff) return NextResponse.json({ error: "Sign in with an active staff account." }, { status: 401 });
+    if(!hasPermission(staff.role,'operations')) {
+      const cases=await db.workflowCase.findMany({where:{AND:[caseScope(staff),{status:{notIn:['RESOLVED','REJECTED']}}]},take:30,orderBy:{updatedAt:'desc'},select:{id:true,title:true,status:true,updatedAt:true}});
+      const tickets=hasPermission(staff.role,'support')?await db.supportTicket.findMany({where:{AND:[supportScope(staff),{status:{not:'RESOLVED'}}]},take:30,orderBy:{updatedAt:'desc'},select:{id:true,category:true,updatedAt:true}}):[];
+      return NextResponse.json({items:[...cases.map(c=>({id:c.id,title:c.title,detail:c.status,at:c.updatedAt.toISOString(),href:`/dashboard/cases/${c.id}`})),...tickets.map(t=>({id:t.id,title:'Support request',detail:t.category,at:t.updatedAt.toISOString(),href:`/dashboard/support/${t.id}`}))].sort((a,b)=>b.at.localeCompare(a.at)),checkedAt:new Date().toISOString()},{headers:{'Cache-Control':'private, no-store'}});
+    }
     const since = new Date(Date.now() - 7 * 86400000);
     const [created, cancelled, tickets, replies] = await Promise.all([
       db.booking.findMany({ where: { createdAt: { gte: since } }, select: { id: true, refCode: true, type: true, dropoffLabel: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 100 }),

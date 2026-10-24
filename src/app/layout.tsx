@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Fetch-It Admin",
-  description: "Fetch-It administrative control panel",
+  title: "Fetch Staff Portal",
+  description: "Fetch support, finance, safety, and operations",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

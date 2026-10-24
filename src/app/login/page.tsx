@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PASSWORD_REQUIREMENT } from "@/lib/password-policy";
+import { PASSWORD_REQUIREMENT } from "@/lib/staff-password-policy";
 export default function LoginPage() {
   const router = useRouter();
   const pending = useRef(false);
@@ -30,8 +30,8 @@ export default function LoginPage() {
   }
   return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
     <form onSubmit={submit} className="card" style={{ width: "100%", maxWidth: 400, padding: 32 }} aria-busy={loading}>
-      <h1 style={{ fontSize: 22 }}>Fetch-It Admin</h1>
-      <p className="muted small">{mode === "login" ? "Staff sign-in only." : mode === "send" ? "Recover your admin password." : "Enter the 6-digit code sent to your email. It expires in 10 minutes."}</p>
+      <h1 style={{ fontSize: 22 }}>Fetch Staff Portal</h1>
+      <p className="muted small">{mode === "login" ? "Staff sign-in only." : mode === "send" ? "Recover your staff password." : "Enter the 6-digit code sent to your email. It expires in 10 minutes."}</p>
       <label htmlFor="email">Email</label><input id="email" className="input" type="email" autoComplete="username" required value={email} disabled={loading || mode === "reset"} onChange={event => setEmail(event.target.value)} style={{ marginBottom: 16 }} />
       {mode === "reset" && <><label htmlFor="code">Email code</label><input id="code" className="input" inputMode="numeric" autoComplete="one-time-code" required pattern="[0-9]{6}" maxLength={6} value={code} disabled={loading} onChange={event => setCode(event.target.value)} style={{ marginBottom: 16 }} /></>}
       {mode !== "send" && <><label htmlFor="password">{mode === "reset" ? "New password" : "Password"}</label><div style={{ display: "flex", gap: 8, marginBottom: 16 }}><input id="password" className="input" type={show ? "text" : "password"} autoComplete={mode === "reset" ? "new-password" : "current-password"} required value={password} disabled={loading} onChange={event => setPassword(event.target.value)} /><button type="button" className="btn" aria-label={show ? "Hide password" : "Show password"} aria-pressed={show} disabled={loading} onClick={() => setShow(value => !value)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />{show && <path d="m3 3 18 18" />}</svg></button></div>{mode === "reset" && <p className="muted small">{PASSWORD_REQUIREMENT}</p>}</>}
