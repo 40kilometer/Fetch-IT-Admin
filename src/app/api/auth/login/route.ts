@@ -7,14 +7,18 @@ import { isStaffRole } from "@/lib/staff-policy";
 import {assertRuntimeAccess} from '@/lib/runtime-access';
 
 async function handlePOST(req: NextRequest) {
+  let stage = "request";
   try {
     const { email, password } = await req.json();
     if (typeof email !== "string" || typeof password !== "string" || !email.trim() || email.length > 254 || !password || password.length > 128) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }
 
+    stage = "rate-limit";
     await limitLogin(req, "admin", String(email));
+    stage = "runtime-access";
     await assertRuntimeAccess('staff');
+    stage = "sign-in-transaction";
     const result = await db.$transaction(async tx => {
       const address = email.trim().toLowerCase();
       await tx.$queryRaw`SELECT "id" FROM "User" WHERE "email" = ${address} FOR UPDATE`;
@@ -31,13 +35,14 @@ async function handlePOST(req: NextRequest) {
     }, { maxWait: 10000, timeout: 20000 });
     if (!result) return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
     const { user, token } = result;
+    stage = "session-cookie";
     await setAdminSessionCookie(token);
 
     return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     if (err instanceof RateLimitError) throw err;
-    console.error("[admin login] error", { code: safeErrorCode(err) });
-    return NextResponse.json({ error: "Login failed." }, { status: 500 });
+    console.error("[admin login] error", { code: safeErrorCode(err), stage });
+    return NextResponse.json({ error: "Staff sign-in is temporarily unavailable. Please try again later." }, { status: 503 });
   }
 }
 
