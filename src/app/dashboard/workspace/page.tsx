@@ -2,8 +2,11 @@ import Link from 'next/link';
 import {db} from '@/lib/db';
 import {requireStaffPage} from '@/lib/staff-access';
 import {caseScope,hasPermission,ROLE_LABELS,supportScope} from '@/lib/staff-policy';
+import {redirect} from 'next/navigation';
+import {teamForRole,teamHome} from '@/lib/staff-teams';
 export default async function Page(){
   const staff=await requireStaffPage();
+  const ownTeam=teamForRole(staff.role);if(ownTeam)redirect(teamHome(ownTeam));
   const [openCases,waiting,mine,tickets]=await Promise.all([
     db.workflowCase.count({where:{AND:[caseScope(staff),{status:{not:'RESOLVED'}}]}}),
     db.workflowCase.count({where:{AND:[caseScope(staff),{status:'AWAITING_ADMIN'}]}}),

@@ -293,9 +293,25 @@ fieldset:disabled { opacity: .65; }
 .restriction-reason { max-width: 240px; overflow-wrap: anywhere; }
 .sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .admin-sidebar { width: 248px; padding: 24px 16px 20px; gap: 24px; }
-.admin-sidebar nav { gap: 22px; }
+.admin-sidebar nav { gap: 8px; }
 .nav-group { display: grid; gap: 3px; }
 .nav-group-label { margin: 0 12px 6px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); }
+.nav-team-heading { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 650; list-style: none; }
+.nav-team-heading::-webkit-details-marker { display: none; }
+.nav-team-heading:hover, .nav-team-heading.is-active { background: #f5f3ef; }
+.nav-team-heading:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.nav-team-heading > svg { flex-shrink: 0; }
+.nav-chevron { margin-left: auto; transition: transform .15s; }
+.nav-team[open] .nav-chevron { transform: rotate(180deg); }
+.nav-team-links { display: grid; gap: 3px; margin: 5px 0 0 20px; padding-left: 9px; border-left: 1px solid var(--border); }
+.nav-team-links .sidebar-link { font-size: 13px; padding: 10px; }
+.nav-management-start { border-top: 1px solid var(--border); margin-top: 7px; padding-top: 15px !important; }
+.team-tools { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); margin-top: 24px; }
+.team-tool { display: block; padding: 20px; }
+.team-tool:hover { border-color: var(--orange); }
+.team-tool h2 { margin: 10px 0; font-size: 17px; }
+.team-tool p { margin-bottom: 0; color: var(--text-muted); line-height: 1.6; }
+.team-management { margin-top: 28px; }
 .sidebar-link { padding: 10px 12px; line-height: 1.35; }
 .sidebar-link svg { flex-shrink: 0; }
 .sidebar-account { padding: 16px 8px 0; }

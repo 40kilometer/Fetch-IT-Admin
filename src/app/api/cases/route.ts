@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { staffRoute, StaffError, text } from "@/lib/staff-http";
 import { caseScope, hasPermission, supportScope } from "@/lib/staff-policy";
+import { teamForCaseKind } from "@/lib/staff-teams";
 export const GET=staffRoute(undefined,async(req,staff)=>{
   const kind=req.nextUrl.searchParams.get('kind');
   const cases=await db.workflowCase.findMany({where:{AND:[caseScope(staff),...(kind?[{kind}]:[])]},orderBy:{updatedAt:'desc'},take:50,select:{id:true,kind:true,title:true,status:true,priority:true,assignedToId:true,version:true,updatedAt:true}});
@@ -25,5 +26,5 @@ export const POST=staffRoute(undefined,async(req,staff)=>{
     await tx.adminAudit.create({data:{actorId:staff.id,actorName:staff.name,action:'CASE_CREATED',entityType:'CASE',entityId:record.id,details:{kind,ticketId:ticketId??null}}});return record;
   });
   const visible=kind==='ESCALATION'||hasPermission(staff.role,kind==='FINANCE'?'finance':'safety');
-  return NextResponse.json({message:'Case submitted to the review queue.',...(visible?{redirect:`/dashboard/cases/${saved.id}`}:{})},{status:201});
+  return NextResponse.json({message:'Case submitted to the review queue.',...(visible?{redirect:`/dashboard/cases/${saved.id}?team=${teamForCaseKind(kind)!.slug}`}:{})},{status:201});
 });
