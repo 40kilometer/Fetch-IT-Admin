@@ -1,5 +1,5 @@
-import { StaffDemoPicker } from "@/components/staff-demo";
+import { redirect } from "next/navigation";
 
 export default function DemoPage() {
-  return <main className="demo-page"><StaffDemoPicker /></main>;
+  redirect("/staff");
 }
