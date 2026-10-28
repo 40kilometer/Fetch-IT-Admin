@@ -17,7 +17,7 @@ export async function currentStaff(permission?: Permission) {
   if (session.demo) {
     const controller=await getDemoController();
     if(!controller||controller.grant.uid!==session.demo.uid||controller.grant.sid!==session.demo.sid)return null;
-    return {...user,name:`${user.name} (demo by ${controller.user.name})`,demo:{controllerName:controller.user.name,expiresAt:new Date(controller.grant.exp).toISOString()}};
+    return {...user,demo:{controllerName:controller.user.name,expiresAt:new Date(controller.grant.exp).toISOString()}};
   }
   return {...user,demo:null};
 }

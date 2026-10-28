@@ -13,13 +13,15 @@ export async function GET() {
       return NextResponse.json({items:[...cases.map(c=>({id:c.id,title:c.title,detail:c.status,at:c.updatedAt.toISOString(),href:`/dashboard/cases/${c.id}`})),...tickets.map(t=>({id:t.id,title:'Support request',detail:t.category,at:t.updatedAt.toISOString(),href:`/dashboard/support/${t.id}`}))].sort((a,b)=>b.at.localeCompare(a.at)),checkedAt:new Date().toISOString()},{headers:{'Cache-Control':'private, no-store'}});
     }
     const since = new Date(Date.now() - 7 * 86400000);
-    const [created, cancelled, tickets, replies] = await Promise.all([
+    const [created, cancelled, tickets, replies, forceRequests] = await Promise.all([
       db.booking.findMany({ where: { createdAt: { gte: since } }, select: { id: true, refCode: true, type: true, dropoffLabel: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 100 }),
       db.booking.findMany({ where: { status: "CANCELLED", cancelledAt: { gte: since } }, select: { id: true, refCode: true, dropoffLabel: true, cancelledAt: true }, orderBy: { cancelledAt: "desc" }, take: 100 }),
       db.supportTicket.findMany({ where: { createdAt: { gte: since } }, select: { id: true, category: true, createdAt: true, booking: { select: { refCode: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
       db.supportMessage.findMany({ where: { authorRole: "CUSTOMER", createdAt: { gte: since } }, select: { id: true, ticketId: true, body: true, createdAt: true, ticket: { select: { booking: { select: { refCode: true } }, customer: { select: { name: true } } } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 }),
+      db.riderApplication.findMany({ where: { status: "FORCE_APPROVAL_PENDING" }, select: { id: true, version: true, updatedAt: true, user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 30 }),
     ]);
     const items = [
+      ...forceRequests.map(a => ({ id: `force:${a.id}:${a.version}`, title: "Force approval needs your decision", detail: a.user.name, at: a.updatedAt.toISOString(), href: `/dashboard/applications/${a.id}` })),
       ...created.map(b => ({ id: `new:${b.id}`, title: `New ${b.type === "RIDE" ? "ride" : "delivery"}`, detail: `${b.refCode} · ${b.dropoffLabel}`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
       ...cancelled.map(b => ({ id: `cancel:${b.id}`, title: "Booking cancelled", detail: `${b.refCode} · ${b.dropoffLabel}`, at: b.cancelledAt!.toISOString(), href: `/dashboard/bookings/${b.id}` })),
       ...tickets.map(t => ({ id: `support:${t.id}`, title: "New support request", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.createdAt.toISOString(), href: `/dashboard/support/${t.id}` })),

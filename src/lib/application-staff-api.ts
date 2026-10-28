@@ -12,20 +12,21 @@ export async function staffApplicationRequest(req: NextRequest, actor: Applicati
     if (!id) {
       const q = req.nextUrl.searchParams.get("q")?.trim().slice(0, 100), status = req.nextUrl.searchParams.get("status"), cursor = req.nextUrl.searchParams.get("cursor"), mode = req.nextUrl.searchParams.get('mode');
       const records = await db.riderApplication.findMany({ where: { ...(['demo', 'real'].includes(mode || '') ? { isDemo: mode === 'demo' } : {}), ...(q ? { user: { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } } : {}), ...(status ? { status } : {}) }, select: { id: true, isDemo: true, status: true, vehicleClass: true, services: true, updatedAt: true, assignedToId: true, user: { select: { name: true, email: true } } }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }], take: 26, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) });
-      return NextResponse.json({ applications: records.slice(0, 25), nextCursor: records.length > 25 ? records[24].id : null });
+      const pendingForceApprovals = canManageApplications(actor.role) ? await db.riderApplication.count({ where: { status: "FORCE_APPROVAL_PENDING" } }) : 0;
+      return NextResponse.json({ applications: records.slice(0, 25), nextCursor: records.length > 25 ? records[24].id : null, pendingForceApprovals, actor: { id: actor.id, canActivate: canActivateApplications(actor.role), canManage: canManageApplications(actor.role) } });
     }
     const body = req.method === "GET" ? null : await readApplicationBody(req, 32000);
     // Mutations validate ownership and version under the application lock. Reuse
     // their committed snapshot instead of loading every relation before and after.
     if (body && body.action !== "preview" && body.action !== "email") {
       let saved = await reviewApplication(id, actor, body);
-      const kind = ({ corrections: "CORRECTIONS", schedule: "ORIENTATION", activate: "ACTIVATED", "complete-demo": "ACTIVATED" } as Record<string, string>)[String(body.action)];
+      const kind = ({ corrections: "CORRECTIONS", schedule: "ORIENTATION", activate: "ACTIVATED", "complete-demo": "ACTIVATED", reject: "REJECTED", ...( ["ACTIVE", "DEMO_COMPLETED"].includes(saved.status) ? { "force-approval": "ACTIVATED", "approve-force": "ACTIVATED" } : {}) } as Record<string, string>)[String(body.action)];
       const pending = kind ? saved.emails.find(email => email.kind === kind && email.status === "PENDING") : undefined;
       if (pending) {
         await sendApplicationEmail(pending.id);
         saved = await db.riderApplication.findUniqueOrThrow({ where: { id }, include: applicationDetail });
       }
-      const approvals = ["activate", "reopen"].includes(String(body.action))
+      const approvals = ["activate", "reopen", "force-approval", "approve-force"].includes(String(body.action))
         ? await db.riderServiceApproval.findMany({ where: { userId: saved.userId } }) : undefined;
       return NextResponse.json({ application: publicApplication(saved, true), ...(approvals ? { approvals } : {}) });
     }
@@ -62,7 +63,7 @@ export async function staffApplicationRequest(req: NextRequest, actor: Applicati
       if (!canManageApplications(actor.role) && app.assignedToId !== actor.id) throw new ApplicationError("Claim the application before sending its messages.", 403);
       const email = app.emails.find(e => e.id === body.emailId);
       if (!email) throw new ApplicationError("Email not found.", 404);
-      if (email.id !== app.emails.find(e => e.kind === email.kind)?.id || !({ CORRECTIONS: ["NEEDS_CORRECTION"], ORIENTATION: ["ORIENTATION_SCHEDULED", "ASSESSED", "ACTIVE", "DEMO_COMPLETED"], ACTIVATED: ["ACTIVE", "DEMO_COMPLETED"] } as Record<string, string[]>)[email.kind]?.includes(app.status)) throw new ApplicationError("This message has been superseded by the current application status or schedule.", 409);
+      if (email.id !== app.emails.find(e => e.kind === email.kind)?.id || !({ CORRECTIONS: ["NEEDS_CORRECTION"], ORIENTATION: ["ORIENTATION_SCHEDULED", "ASSESSED", "ACTIVE", "DEMO_COMPLETED"], ACTIVATED: ["ACTIVE", "DEMO_COMPLETED"], REJECTED: ["REJECTED"] } as Record<string, string[]>)[email.kind]?.includes(app.status)) throw new ApplicationError("This message has been superseded by the current application status or schedule.", 409);
       if (email.status === "SENT") throw new ApplicationError("This invitation has already been sent.", 409);
       if (email.status === "UNCERTAIN" || (email.status === "SENDING" && email.startedAt && email.startedAt < new Date(Date.now() - 120000))) {
         if (body.confirmResend !== true) throw new ApplicationError("Check the recipient mailbox first, then explicitly confirm resending; the earlier message may have been delivered.", 409);

@@ -65,17 +65,32 @@ function fixture() {
 
 test('anonymous demo page stays locked and cannot mint a staff session', async () => {
   const f = fixture(), status = await f.route.GET(f.request());
-  assert.deepEqual(await status.json(), { unlocked: false, canStart: false, currentRole: null, expiresAt: null, controllerName: null });
+  assert.deepEqual(await status.json(), { unlocked: false, canStart: false, currentRole: null, expiresAt: null, controllerName: null, currentEmail: null, canUseAdmin: false });
   assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
   assert.equal(f.sessions.size, 0); assert.equal(f.cookies.size, 0);
 });
 
 test('ordinary staff cannot unlock demo access or elevate to Admin', async () => {
   for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) {
-    const f = fixture(); f.startAs(role);
+    const f = fixture(); f.users.get(role).email = "ordinary@fixture.invalid"; f.startAs(role);
     assert.equal((await f.demo.demoStatus()).canStart, false);
     assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
     assert.equal(f.sessions.size, 1); assert.equal(f.cookies.has('fetchit_staff_demo'), false);
+  }
+});
+
+test('designated real demo staff can unlock staff switching with their own account and can never switch into Admin', async () => {
+  for (const startingRole of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) {
+    const f = fixture(); f.startAs(startingRole);
+    const status = await f.demo.demoStatus(); assert.equal(status.canStart, true); assert.equal(status.canUseAdmin, false);
+    for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) {
+      assert.equal((await f.route.POST(f.request('POST', { role }))).status, 200);
+      const user = await f.access.currentStaff(); assert.equal(user.id, role); assert.equal(user.email, f.users.get(role).email); assert.equal(user.name, role);
+    }
+    assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 403);
+    assert.equal((await f.route.DELETE(f.request('DELETE'))).status, 200);
+    assert.equal((await f.access.currentStaff()).id, startingRole);
+    assert.equal(f.cookies.has('fetchit_staff_demo'), false);
   }
 });
 
@@ -93,7 +108,7 @@ test('Admin unlocks every allowed role with sessions capped to the demo window',
     assert.equal(response.status, 200, role);
     const user = await f.access.currentStaff();
     assert.equal(user.id, role); assert.equal(user.role, role);
-    assert(user.name.includes('demo by ADMIN'));
+    assert.equal(user.name, role);
     assert.equal(user.demo.controllerName, 'ADMIN');
     const child = await f.session.getAdminSession();
     assert(child.exp <= f.now() + 60 * 60_000); assert.equal(child.demo.sid, parent.sid);
@@ -191,7 +206,7 @@ test('normal password sign-in closes the previous demo authority', async () => {
   assert(f.sessions.get(parent.sid).revokedAt); assert(f.sessions.get(child.sid).revokedAt);
   assert.equal(f.cookies.has('fetchit_staff_demo'), false);
   assert.equal((await f.access.currentStaff()).id, 'SUPPORT');
-  assert.equal((await f.demo.demoStatus()).canStart, false);
+  assert.equal((await f.demo.demoStatus()).canStart, true);
 });
 
 test('logging out closes the demo grant and revokes both sessions', async () => {

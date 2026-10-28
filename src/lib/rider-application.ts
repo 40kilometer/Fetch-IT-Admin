@@ -3,6 +3,8 @@ import type { Prisma, RiderApplication, RiderApplicationDocument } from "@prisma
 import { ApplicationError, SECTION_FIELDS, DOCUMENT_LABELS, normalizeFields, requiredDocuments, validateApplication, validateSelection, approvalExpiry, type Fields, type Review } from "./rider-application-policy";
 import { liveApprovalWhere, validOperatingZone } from "./rider-eligibility";
 import { assertRealApplication } from './application-demo-policy';
+import { randomUUID } from 'node:crypto';
+import { orientationDecision, forceApprovalRequest } from './application-decisions';
 
 export type ApplicationActor = { id: string; name: string; role: string };
 export const canReviewApplications = (role: string) => ["ADMIN", "SAFETY", "SUPERADMIN"].includes(role);
@@ -160,26 +162,53 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       data.status = body.attended && body.passed ? "ASSESSED" : "ORIENTATION_SCHEDULED";
       data.attendedAt = body.attended ? new Date() : null; data.assessmentPassedAt = body.passed ? new Date() : null; data.assessedById = actor.id; data.assessmentNotes = notes;
       eventDetails = { attended: body.attended, passed: body.passed, notes };
-    } else if (body.action === "activate" || body.action === 'complete-demo') {
-      if (body.action === 'activate') assertRealApplication(app);
-      else if (!app.isDemo) throw new ApplicationError('Only a demo application can complete the demo.', 403);
-      if (!approver || !["ASSESSED", "ACTIVE"].includes(app.status)) throw new ApplicationError("Activate services after the assessment passes.", 403);
+    } else if (body.action === "reject") {
+      if (!orientationDecision(app).canReject) throw new ApplicationError("Reject only after orientation has elapsed and a failed or absent result is recorded.", 409);
+      const note = reason(body.reason);
+      data.status = "REJECTED";
+      eventDetails = { reason: note, orientationAt: app.orientationAt!.toISOString(), assessedById: app.assessedById! };
+      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:REJECTED`, kind: "REJECTED", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName, applicationId: id, reason: note, demo: app.isDemo } } });
+    } else if (body.action === "deny-force") {
+      if (!admin) throw new ApplicationError("Admin must decide a force approval request.", 403);
+      const request = forceApprovalRequest((await tx.riderApplicationEvent.findFirst({ where: { applicationId: id, action: "FORCE_APPROVAL_REQUESTED" }, orderBy: { createdAt: "desc" } }))?.details);
+      if (app.status !== "FORCE_APPROVAL_PENDING" || !request || request.requestId !== body.requestId || request.applicationVersion !== app.version) throw new ApplicationError("This force approval request is no longer pending.", 409);
+      data.status = request.previousStatus;
+      eventDetails = { requestId: request.requestId, reason: reason(body.reason), requestedById: request.requestedById };
+    } else if (["activate", "complete-demo", "force-approval", "approve-force"].includes(String(body.action))) {
+      const forced = body.action === "force-approval" || body.action === "approve-force";
+      let request: ReturnType<typeof forceApprovalRequest> = null;
+      if (body.action === "approve-force") {
+        if (!admin) throw new ApplicationError("Admin must decide a force approval request.", 403);
+        request = forceApprovalRequest((await tx.riderApplicationEvent.findFirst({ where: { applicationId: id, action: "FORCE_APPROVAL_REQUESTED" }, orderBy: { createdAt: "desc" } }))?.details);
+        if (app.status !== "FORCE_APPROVAL_PENDING" || !request || request.requestId !== body.requestId || request.applicationVersion !== app.version || request.vehicleClass !== app.vehicleClass) throw new ApplicationError("This force approval request is no longer pending.", 409);
+      }
+      if (!forced && body.action === 'activate') assertRealApplication(app);
+      if (body.action === 'complete-demo' && !app.isDemo) throw new ApplicationError('Only a demo application can complete the demo.', 403);
+      if (!approver || (forced ? !["SUBMITTED", "IN_REVIEW", "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED", "REJECTED", "ACTIVE", ...(request ? ["FORCE_APPROVAL_PENDING"] : [])].includes(app.status) : !["ASSESSED", "ACTIVE"].includes(app.status))) throw new ApplicationError("Activate services after the assessment passes.", 403);
       applicationReady(app);
-      if (!app.attendedAt || !app.assessmentPassedAt) throw new ApplicationError("Record successful orientation and assessment first.");
-      const services = body.services as string[];
+      if (!forced && (app.status === "ACTIVE" ? !app.orientationAt || app.orientationAt > new Date() || !app.attendedAt || !app.assessmentPassedAt : !orientationDecision(app).canApprove)) throw new ApplicationError("Record successful orientation and assessment first, after the scheduled time.");
+      const forceReason = forced ? request?.reason ?? reason(body.reason) : null;
+      const services = (request?.services ?? body.services) as string[];
       if (!Array.isArray(services) || !services.length || services.some(s => !app.services.includes(s as "DELIVERY"))) throw new ApplicationError("Choose services from this application.");
       if (new Set(services).size !== services.length) throw new ApplicationError("Choose each service only once.");
       const alreadyApproved = await tx.riderServiceApproval.findFirst({ where: { userId: app.userId, vehicleClass: app.vehicleClass, service: { in: services as ("DELIVERY" | "RIDE")[] }, source: "APPLICATION", ...liveApprovalWhere() } });
       if (alreadyApproved) throw new ApplicationError("A selected service is already active. Choose only services awaiting activation.", 409);
       const expiry = approvalExpiry(app.fields as Fields);
-      if (!app.isDemo && app.vehicleClass === "TRICYCLE" && services.includes("RIDE") && !validOperatingZone(body.operatingZone)) throw new ApplicationError("Provide the verified tricycle operating-zone polygon as a closed array of [longitude, latitude] points.");
+      const operatingZone = request?.operatingZone ?? body.operatingZone;
+      if (!app.isDemo && app.vehicleClass === "TRICYCLE" && services.includes("RIDE") && !validOperatingZone(operatingZone)) throw new ApplicationError("Provide the verified tricycle operating-zone polygon as a closed array of [longitude, latitude] points.");
+      if (forced && !admin) {
+        const proposal = { requestId: randomUUID(), reason: forceReason!, requestedById: actor.id, requestedByName: actor.name, requestedByRole: actor.role, requestedAt: new Date().toISOString(), applicationVersion: app.version + 1, previousStatus: app.status, vehicleClass: app.vehicleClass, services, ...(operatingZone ? { operatingZone: operatingZone as Prisma.InputJsonValue } : {}) };
+        await tx.riderApplication.update({ where: { id }, data: { status: "FORCE_APPROVAL_PENDING", version: { increment: 1 } } });
+        await applicationEvent(tx, id, actor, "FORCE_APPROVAL_REQUESTED", proposal);
+        return tx.riderApplication.findUniqueOrThrow({ where: { id }, include: detail });
+      }
       for (const service of app.isDemo ? [] : services) {
-        const zone = app.vehicleClass === "TRICYCLE" && service === "RIDE" ? { operatingZone: body.operatingZone as Prisma.InputJsonValue } : {};
+        const zone = app.vehicleClass === "TRICYCLE" && service === "RIDE" ? { operatingZone: operatingZone as Prisma.InputJsonValue } : {};
         await tx.riderServiceApproval.upsert({ where: { userId_vehicleClass_service: { userId: app.userId, vehicleClass: app.vehicleClass, service: service as "DELIVERY" } }, create: { userId: app.userId, vehicleClass: app.vehicleClass, service: service as "DELIVERY", source: "APPLICATION", approvedById: actor.id, validUntil: expiry, ...zone }, update: { source: "APPLICATION", approvedById: actor.id, approvedAt: new Date(), validUntil: expiry, revokedAt: null, ...zone } });
       }
       if (!app.isDemo) await tx.riderProfile.update({ where: { userId: app.userId }, data: { vehicleClass: app.vehicleClass, vehiclePlate: (app.fields as Fields).plateNumber } });
       data.status = app.isDemo ? 'DEMO_COMPLETED' : "ACTIVE";
-      eventDetails = { services, vehicle: app.vehicleClass, validUntil: expiry.toISOString() };
+      eventDetails = { services, vehicle: app.vehicleClass, validUntil: expiry.toISOString(), ...(forced ? { forceApproval: true, reason: forceReason!, ...(request ? { requestId: request.requestId, requestedById: request.requestedById, requestedByName: request.requestedByName } : {}) } : {}) };
       await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:ACTIVATED`, kind: "ACTIVATED", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName, applicationId: id, vehicle: app.vehicleClass, services: services.join(" / "), demo: app.isDemo } } });
     } else if (body.action === "reopen") {
       if (!admin) throw new ApplicationError("Admin access required.", 403);

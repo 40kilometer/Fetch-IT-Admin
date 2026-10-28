@@ -7,15 +7,13 @@ import { assertRuntimeAccess } from "./runtime-access";
 import { createAdminSessionToken, getAdminSession, setAdminSessionCookie, verifyAdminSessionToken, type AdminSessionPayload } from "./session";
 import { isStaffRole, type StaffRole } from "./staff-policy";
 import { teamForRole, teamHome } from "./staff-teams";
+import { DEMO_STAFF_EMAILS as STAFF_EMAILS, isDemoStaffAccount } from './staff-demo-roles';
 
 const DEMO_COOKIE = "fetchit_staff_demo";
 const DEMO_MS = 60 * 60_000;
-const STAFF_EMAILS: Record<Exclude<StaffRole, "ADMIN">, string> = {
-  SUPPORT: "cs@staff.fetchit.invalid", SUPPORT_SUPERVISOR: "cs-supervisor@staff.fetchit.invalid",
-  FINANCE: "finance@staff.fetchit.invalid", SAFETY: "safety@staff.fetchit.invalid",
-};
 type Grant = { uid: string; sid: string; iat: number; exp: number };
 type SessionUser = { id: string; name: string; email: string; role: string; isBanned: boolean; authInvalidBefore: Date | null };
+const canPresent = (user: SessionUser | null) => !!user && (user.role === 'ADMIN' || isDemoStaffAccount(user));
 type LiveSession = { userId: string; revokedAt: Date | null; expiresAt: Date } | null;
 export class DemoAccessError extends Error {
   constructor(message: string, public status = 403) { super(message); }
@@ -53,9 +51,9 @@ export async function getDemoController() {
     db.user.findUnique({ where: { id: grant.uid }, select: { id: true, name: true, email: true, role: true, isBanned: true, authInvalidBefore: true } }),
     db.staffSession.findUnique({ where: { id: grant.sid } }),
   ]);
-  return user?.role === "ADMIN" && active(grant, user, live) ? { grant, user } : null;
+  return canPresent(user) && active(grant, user, live) ? { grant, user: user! } : null;
 }
-async function startingAdmin() {
+async function startingPresenter() {
   const session = await getAdminSession();
   if (!session?.sid || session.demo || session.iat === undefined) return null;
   await assertRuntimeAccess("staff");
@@ -63,14 +61,14 @@ async function startingAdmin() {
     db.user.findUnique({ where: { id: session.uid }, select: { id: true, name: true, email: true, role: true, isBanned: true, authInvalidBefore: true } }),
     db.staffSession.findUnique({ where: { id: session.sid } }),
   ]);
-  return user?.role === "ADMIN" && active(session, user, live) ? { user, grant: { uid: user.id, sid: session.sid, iat: session.iat, exp: Math.min(session.exp, live!.expiresAt.getTime(), Date.now() + DEMO_MS) } } : null;
+  return canPresent(user) && active(session, user, live) ? { user: user!, grant: { uid: user!.id, sid: session.sid, iat: session.iat, exp: Math.min(session.exp, live!.expiresAt.getTime(), Date.now() + DEMO_MS) } } : null;
 }
 export async function demoStatus() {
-  const controller = await getDemoController(), starter = controller ? null : await startingAdmin();
+  const controller = await getDemoController(), starter = controller ? null : await startingPresenter();
   const session = await getAdminSession();
   const current = session?.demo && controller && session.demo.uid === controller.grant.uid && session.demo.sid === controller.grant.sid
-    ? await db.user.findUnique({ where: { id: session.uid }, select: { role: true } }) : null;
-  return { unlocked: !!controller, canStart: !!starter, currentRole: current?.role ?? (starter ? "ADMIN" : null), expiresAt: controller ? new Date(controller.grant.exp).toISOString() : null, controllerName: (controller ?? starter)?.user.name ?? null };
+    ? await db.user.findUnique({ where: { id: session.uid }, select: { role: true, email: true } }) : null;
+  return { unlocked: !!controller, canStart: !!starter, currentRole: current?.role ?? starter?.user.role ?? null, currentEmail: current?.email ?? starter?.user.email ?? null, canUseAdmin: (controller ?? starter)?.user.role === "ADMIN", expiresAt: controller ? new Date(controller.grant.exp).toISOString() : null, controllerName: (controller ?? starter)?.user.name ?? null };
 }
 export async function revokeDemoSessions(tx: Prisma.TransactionClient, session: AdminSessionPayload | null) {
   const grant = await readGrant(), parent = grant ?? session?.demo;
@@ -80,22 +78,23 @@ export async function revokeDemoSessions(tx: Prisma.TransactionClient, session: 
 }
 export async function switchDemoRole(role: unknown) {
   if (!isStaffRole(role)) throw new DemoAccessError("Choose a demo role.", 400);
-  const controller = await getDemoController() ?? await startingAdmin();
-  if (!controller) throw new DemoAccessError("Sign in as Admin once to unlock the demo.", 401);
+  const controller = await getDemoController() ?? await startingPresenter();
+  if (!controller) throw new DemoAccessError("Sign in with a demo staff account or Admin once to unlock switching.", 401);
+  if (role === "ADMIN" && controller.user.role !== "ADMIN") throw new DemoAccessError("Sign in as Admin to open the Admin role.", 403);
   const previous = await getAdminSession(), { grant } = controller;
   const result = await db.$transaction(async tx => {
-    if (role !== "ADMIN") await tx.$queryRaw`SELECT "id" FROM "User" WHERE "email" = ${STAFF_EMAILS[role]} FOR UPDATE`;
-    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${grant.uid} FOR UPDATE`;
+    const targetEmail = role === "ADMIN" ? controller.user.email : STAFF_EMAILS[role];
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${grant.uid} OR "email" = ${targetEmail} ORDER BY "id" FOR UPDATE`;
     await tx.$queryRaw`SELECT "id" FROM "StaffSession" WHERE "id" = ${grant.sid} FOR UPDATE`;
     const [admin, parent] = await Promise.all([tx.user.findUnique({ where: { id: grant.uid } }), tx.staffSession.findUnique({ where: { id: grant.sid } })]);
-    if (admin?.role !== "ADMIN" || !active(grant, admin, parent) || grant.exp <= Date.now()) throw new DemoAccessError("Demo access expired. Sign in as Admin again.", 401);
-    const target = role === "ADMIN" ? admin : await tx.user.findUnique({ where: { email: STAFF_EMAILS[role] } });
+    if (!canPresent(admin) || !active(grant, admin, parent) || grant.exp <= Date.now() || (role === "ADMIN" && admin!.role !== "ADMIN")) throw new DemoAccessError("Demo access expired. Sign in again.", 401);
+    const target = role === "ADMIN" ? admin! : await tx.user.findUnique({ where: { email: STAFF_EMAILS[role] } });
     if (!target || target.isBanned || target.role !== role) throw new DemoAccessError("This demonstration account is unavailable.", 409);
     const token = createAdminSessionToken({ uid: target.id, email: target.email, name: target.name, demo: { uid: grant.uid, sid: grant.sid } }, grant.exp);
     const child = verifyAdminSessionToken(token)!;
     await tx.staffSession.create({ data: { id: child.sid!, userId: target.id, expiresAt: new Date(child.exp) } });
     if (previous?.demo?.uid === grant.uid && previous.demo.sid === grant.sid && previous.sid !== grant.sid) await tx.staffSession.updateMany({ where: { id: previous.sid, userId: previous.uid }, data: { revokedAt: new Date() } });
-    await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "DEMO_ROLE_SWITCHED", entityType: "AUTH", entityId: target.id, details: { role, account: target.email, demoSessionId: child.sid!, controllerSessionId: grant.sid } } });
+    await tx.adminAudit.create({ data: { actorId: admin!.id, actorName: admin!.name, action: "DEMO_ROLE_SWITCHED", entityType: "AUTH", entityId: target.id, details: { role, account: target.email, demoSessionId: child.sid!, controllerSessionId: grant.sid } } });
     return { token, role: target.role };
   }, { maxWait: 10000, timeout: 20000 });
   await setGrant(grant);
@@ -105,20 +104,21 @@ export async function switchDemoRole(role: unknown) {
 }
 export async function finishDemo() {
   const controller = await getDemoController();
-  if (!controller) throw new DemoAccessError("Demo access expired. Sign in as Admin again.", 401);
+  if (!controller) throw new DemoAccessError("Demo access expired. Sign in again.", 401);
   const previous = await getAdminSession(), { grant } = controller;
   const token = await db.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${grant.uid} FOR UPDATE`;
     await tx.$queryRaw`SELECT "id" FROM "StaffSession" WHERE "id" = ${grant.sid} FOR UPDATE`;
     const [admin, parent] = await Promise.all([tx.user.findUnique({ where: { id: grant.uid } }), tx.staffSession.findUnique({ where: { id: grant.sid } })]);
-    if (admin?.role !== "ADMIN" || !active(grant, admin, parent) || grant.exp <= Date.now()) throw new DemoAccessError("Demo access expired. Sign in as Admin again.", 401);
-    const restored = createAdminSessionToken({ uid: admin.id, email: admin.email, name: admin.name }, parent!.expiresAt.getTime());
+    if (!canPresent(admin) || !active(grant, admin, parent) || grant.exp <= Date.now()) throw new DemoAccessError("Demo access expired. Sign in again.", 401);
+    const restored = createAdminSessionToken({ uid: admin!.id, email: admin!.email, name: admin!.name }, parent!.expiresAt.getTime());
     const payload = verifyAdminSessionToken(restored)!;
-    await tx.staffSession.create({ data: { id: payload.sid!, userId: admin.id, expiresAt: new Date(payload.exp) } });
+    await tx.staffSession.create({ data: { id: payload.sid!, userId: admin!.id, expiresAt: new Date(payload.exp) } });
     await revokeDemoSessions(tx, previous);
-    await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "DEMO_FINISHED", entityType: "AUTH", entityId: admin.id, details: { controllerSessionId: grant.sid } } });
+    await tx.adminAudit.create({ data: { actorId: admin!.id, actorName: admin!.name, action: "DEMO_FINISHED", entityType: "AUTH", entityId: admin!.id, details: { controllerSessionId: grant.sid } } });
     return restored;
   }, { maxWait: 10000, timeout: 20000 });
   await clearDemoCookie(); await setAdminSessionCookie(token);
-  return { redirect: "/dashboard" };
+  const team = teamForRole(controller.user.role);
+  return { redirect: team ? teamHome(team) : "/dashboard" };
 }

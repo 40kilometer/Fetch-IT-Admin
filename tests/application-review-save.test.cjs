@@ -15,8 +15,8 @@ function loader(mocks = {}) {
     const localRequire = name => {
       if (Object.hasOwn(mocks, name)) return mocks[name];
       if (name.endsWith('.css')) return {};
-      if (name.startsWith('@/')) return load('src/' + name.slice(2) + '.ts');
-      if (name.startsWith('.')) return load(path.resolve(path.dirname(filename), name + '.ts'));
+      if (name.startsWith('@/')) { const base = 'src/' + name.slice(2); return load(base + (fs.existsSync(path.join(root, base + '.ts')) ? '.ts' : '.tsx')); }
+      if (name.startsWith('.')) { const base = path.resolve(path.dirname(filename), name); return load(base + (fs.existsSync(base + '.ts') ? '.ts' : '.tsx')); }
       return require(name);
     };
     new Function('exports', 'require', ts.transpileModule(fs.readFileSync(filename, 'utf8'), {

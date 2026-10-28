@@ -4,13 +4,14 @@ import { db } from "./db";
 import { ApplicationError } from "./rider-application-policy";
 import { localDemoEnabled } from './local-demo-runtime';
 import { captureLocalMail } from './local-demo-files';
-type Payload = { name: string; applicationId: string; vehicle?: string; services?: string; date?: string; venue?: string; instructions?: string; corrections?: string[]; demo?: boolean };
+type Payload = { name: string; applicationId: string; vehicle?: string; services?: string; date?: string; venue?: string; instructions?: string; corrections?: string[]; reason?: string; demo?: boolean };
 export function applicationMessage(kind: string, p: Payload) {
-  const subject = kind === "ORIENTATION" ? "Your Fetch-It orientation invitation" : kind === "CORRECTIONS" ? "Your Fetch-It application needs corrections" : "Your Fetch-It services are activated";
+  const subject = kind === "ORIENTATION" ? "Your Fetch-It orientation invitation" : kind === "CORRECTIONS" ? "Your Fetch-It application needs corrections" : kind === "REJECTED" ? "Your Fetch-It application decision" : "Your Fetch-It services are activated";
   const date = p.date ? new Date(p.date).toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "full", timeStyle: "short" }) + " (Philippine time)" : "";
   const text = `Dear ${p.name},\n\n` + (kind === "ORIENTATION"
     ? `Your documents for ${p.vehicle} — ${p.services} have been accepted.\n\nPlease attend your orientation:\nDate: ${date}\nVenue: ${p.venue}\n\n${p.instructions}\n\nYour orientation letter is attached. Activation follows completion of the required orientation and assessment.`
     : kind === "CORRECTIONS" ? `Please correct only the following items:\n\n${(p.corrections ?? []).map(item => `- ${item}`).join("\n")}\n\nSign in to the Fetch-It Rider app to replace the flagged documents or details. Accepted items remain accepted.`
+    : kind === "REJECTED" ? `Your application was not approved after the orientation and assessment.\n\nReason: ${p.reason}\n\nContact Fetch-It support if you need help with the next steps.`
     : `Your ${p.vehicle} services (${p.services}) are activated. Sign in to Fetch-It Rider to view your approved services and go online.`) + `\n\nApplication: ${p.applicationId}\n\nFetch-It Rider Onboarding Team`;
   if (p.demo) {
     const demoText = kind === 'ACTIVATED'

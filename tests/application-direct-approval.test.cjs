@@ -15,8 +15,8 @@ function loader(mocks = {}) {
     const localRequire = name => {
       if (Object.hasOwn(mocks, name)) return mocks[name];
       if (name.endsWith('.css')) return {};
-      if (name.startsWith('@/')) return load('src/' + name.slice(2) + '.ts');
-      if (name.startsWith('.')) return load(path.resolve(path.dirname(filename), name + '.ts'));
+      if (name.startsWith('@/')) { const base = 'src/' + name.slice(2); return load(base + (fs.existsSync(path.join(root, base + '.ts')) ? '.ts' : '.tsx')); }
+      if (name.startsWith('.')) { const base = path.resolve(path.dirname(filename), name); return load(base + (fs.existsSync(base + '.ts') ? '.ts' : '.tsx')); }
       return require(name);
     };
     new Function('exports', 'require', ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
@@ -33,20 +33,20 @@ function fixture(role = 'SAFETY', overrides = {}) {
     assignedToId: actor.id, recommendedById: actor.id, fieldReviews: Object.fromEntries(Object.keys(policy.SECTION_FIELDS).map(key => [key, { status: 'ACCEPTED', reviewerId: actor.id }])),
     emailVerifiedAt: new Date(), verifiedEmail: 'rider@example.invalid', user: { id: 'rider', name: 'Test Rider', email: 'rider@example.invalid', isBanned: false },
     documents: policy.requiredDocuments('MOTORCYCLE', ['DELIVERY'], fields).map(kind => ({ id: kind, kind, current: true, status: 'ACCEPTED' })), events: [], emails: [], ...overrides };
-  const audits = [], approvals = []; let profileWrites = 0;
+  const audits = [], approvals = [], sentMails = []; let profileWrites = 0;
   const copy = () => structuredClone(app);
   const db = { $queryRaw: async () => [],
     riderApplication: { findUnique: async () => copy(), findUniqueOrThrow: async () => copy(), update: async ({ data }) => { for (const [key, value] of Object.entries(data)) app[key] = key === 'version' ? app.version + value.increment : value; return copy(); } },
-    riderApplicationEvent: { create: async ({ data }) => { app.events.unshift({ id: 'event-' + app.events.length, createdAt: new Date(), ...data }); } },
+    riderApplicationEvent: { findFirst: async ({ where }) => structuredClone(app.events.find(e => e.action === where.action) ?? null), create: async ({ data }) => { app.events.unshift({ id: 'event-' + app.events.length, createdAt: new Date(), ...data }); } },
     adminAudit: { create: async ({ data }) => { audits.push(data); } },
     riderApplicationEmail: { create: async ({ data }) => { app.emails.unshift({ id: 'email-' + app.emails.length, status: 'PENDING', ...data }); } },
-    riderServiceApproval: { findFirst: async () => null, findMany: async () => approvals, upsert: async ({ create }) => { approvals.push(create); } },
+    riderServiceApproval: { findFirst: async ({ where }) => approvals.find(a => a.userId === where.userId && where.service.in.includes(a.service)) ?? null, findMany: async () => approvals, upsert: async ({ create }) => { approvals.push(create); } },
     riderProfile: { update: async () => { profileWrites++; } },
   }; db.$transaction = callback => callback(db);
-  const load = loader({ './db': { db }, './request-guard': { RateLimitError: class extends Error {} }, './application-storage': {}, './application-mail': { sendApplicationEmail: async () => {}, orientationLetter: async () => Buffer.from('PDF'), applicationMessage: () => ({ text: 'Preview' }) } });
+  const load = loader({ './db': { db }, './request-guard': { RateLimitError: class extends Error {} }, './application-storage': {}, './application-mail': { sendApplicationEmail: async id => { sentMails.push(id); }, orientationLetter: async () => Buffer.from('PDF'), applicationMessage: () => ({ text: 'Preview' }) } });
   const review = (action, body = {}, person = actor) => load('src/lib/rider-application.ts').reviewApplication(app.id, person, { action, version: app.version, ...body });
   const request = (method = 'GET', body, person = actor) => load('src/lib/application-staff-api.ts').staffApplicationRequest(new NextRequest('https://admin.example.invalid/api/rider-applications/application', { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) }), person, app.id);
-  return { app, actor, audits, approvals, review, request, load, profileWrites: () => profileWrites };
+  return { app, actor, audits, approvals, sentMails, review, request, load, profileWrites: () => profileWrites };
 }
 const schedule = () => ({ orientationAt: new Date(Date.now() + 86400000).toISOString(), venue: 'Test orientation venue', instructions: 'Bring the original documents.' });
 
@@ -100,7 +100,7 @@ test('direct approval still requires a complete accepted checklist, verification
 });
 
 test('Safety can complete an assessed demo but cannot grant it real services', async () => {
-  const f = fixture('SAFETY', { isDemo: true, status: 'ASSESSED', attendedAt: new Date(), assessmentPassedAt: new Date(), assessedById: 'reviewer' });
+  const f = fixture('SAFETY', { isDemo: true, status: 'ASSESSED', orientationAt: new Date(Date.now()-60000), attendedAt: new Date(), assessmentPassedAt: new Date(), assessedById: 'reviewer', assessmentNotes: 'Assessment passed.' });
   await assert.rejects(f.review('activate', { services: ['DELIVERY'] }));
   assert.equal((await f.review('complete-demo', { services: ['DELIVERY'] })).status, 'DEMO_COMPLETED');
   assert.equal(f.approvals.length, 0); assert.equal(f.profileWrites(), 0);
@@ -118,4 +118,106 @@ test('Admin and Safety UI expose direct approval and expanded audit history with
     assert(html.includes('details class="oa-card" open=""')); assert(html.includes('Application audit history'));
     assert.equal(html.includes('Reopen &amp; revoke service access'), role === 'ADMIN');
   }
+});
+
+test('Safety decisions stay locked until orientation elapsed and its result selects approve or reject', async () => {
+  const { orientationDecision } = loader()('src/lib/application-decisions.ts');
+  const at = Date.now(), base = { status: 'ASSESSED', orientationAt: new Date(at + 60000), assessedById: 'reviewer', assessmentNotes: 'Passed.', attendedAt: new Date(), assessmentPassedAt: new Date() };
+  assert.equal(orientationDecision(base, at).canApprove, false);
+  assert.equal(orientationDecision({ ...base, orientationAt: new Date(at - 1) }, at).canApprove, true);
+  assert.equal(orientationDecision({ ...base, orientationAt: new Date(at - 1), assessedById: null }, at).canApprove, false);
+  const failed = { ...base, status: 'ORIENTATION_SCHEDULED', orientationAt: new Date(at - 1), attendedAt: null, assessmentPassedAt: null };
+  assert.equal(orientationDecision(failed, at).canApprove, false); assert.equal(orientationDecision(failed, at).canReject, true);
+  const f = fixture('SAFETY', failed);
+  assert.equal((await f.review('reject', { reason: 'Rider did not attend orientation.' })).status, 'REJECTED');
+  assert.equal(f.audits[0].details.reason, 'Rider did not attend orientation.'); assert.equal(f.app.emails[0].kind, 'REJECTED');
+  await assert.rejects(fixture('SAFETY', base).review('reject', { reason: 'Not yet.' }));
+});
+
+test('Safety force approval queues a reasoned immutable request; only Admin can activate its exact selected services', async () => {
+  const f = fixture('SAFETY', { status: 'ORIENTATION_SCHEDULED', orientationAt: new Date(Date.now() + 86400000) });
+  await assert.rejects(f.review('force-approval', { services: ['DELIVERY'], reason: 'x' }));
+  const pending = await f.review('force-approval', { services: ['DELIVERY'], reason: 'Orientation result needs a management exception.' });
+  assert.equal(pending.status, 'FORCE_APPROVAL_PENDING'); assert.equal(f.approvals.length, 0); assert.equal(f.profileWrites(), 0);
+  const proposal = pending.events[0].details;
+  assert.equal(proposal.requestedById, f.actor.id); assert.equal(proposal.applicationVersion, pending.version);
+  await assert.rejects(f.review('approve-force', { requestId: proposal.requestId }), /Admin must decide/);
+  await assert.rejects(f.review('deny-force', { requestId: proposal.requestId, reason: 'Not allowed.' }), /Admin must decide/);
+  const admin = { id: 'admin', name: 'Admin Reviewer', role: 'ADMIN' };
+  await assert.rejects(f.review('approve-force', { requestId: 'forged' }, admin), /no longer pending/);
+  const approved = await f.review('approve-force', { requestId: proposal.requestId, services: ['RIDE'] }, admin);
+  assert.equal(approved.status, 'ACTIVE'); assert.deepEqual(f.approvals.map(a => a.service), ['DELIVERY']);
+  assert.equal(f.approvals[0].approvedById, admin.id); assert.equal(approved.attendedAt, undefined);
+  assert.equal(f.audits[1].details.reason, proposal.reason); assert.equal(f.audits[1].details.requestedById, f.actor.id);
+  await assert.rejects(f.review('approve-force', { requestId: proposal.requestId }, admin), /no longer pending/);
+});
+
+test('Admin can force approval immediately with a reason; denying a staff request restores its previous stage', async () => {
+  const direct = fixture('ADMIN');
+  assert.equal((await direct.review('force-approval', { services: ['DELIVERY'], reason: 'Approved management exception for this applicant.' })).status, 'ACTIVE');
+  assert.equal(direct.audits.length, 1); assert.equal(direct.audits[0].details.forceApproval, true);
+  const denied = fixture('SAFETY', { status: 'REJECTED' });
+  const pending = await denied.review('force-approval', { services: ['DELIVERY'], reason: 'Please review the failed assessment exception.' });
+  const requestId = pending.events[0].details.requestId;
+  await denied.review('deny-force', { requestId, reason: 'Applicant must repeat the orientation.' }, { id: 'admin', name: 'Admin', role: 'ADMIN' });
+  assert.equal(denied.app.status, 'REJECTED'); assert.equal(denied.approvals.length, 0);
+  const incomplete = fixture('ADMIN', { documents: [] });
+  await assert.rejects(incomplete.review('force-approval', { services: ['DELIVERY'], reason: 'Still needs accepted documents.' }));
+  const stale = fixture('SAFETY');
+  const proposed = await stale.review('force-approval', { services: ['DELIVERY'], reason: 'Management exception requested.' });
+  stale.app.version++;
+  await assert.rejects(stale.review('approve-force', { requestId: proposed.events[0].details.requestId }, { id: 'admin', name: 'Admin', role: 'ADMIN' }), /no longer pending/);
+});
+
+test('force approval of demo data never grants real services', async () => {
+  const f = fixture('ADMIN', { isDemo: true });
+  assert.equal((await f.review('force-approval', { services: ['DELIVERY'], reason: 'Complete the demonstration before its scheduled time.' })).status, 'DEMO_COMPLETED');
+  assert.equal(f.approvals.length, 0); assert.equal(f.profileWrites(), 0);
+});
+
+test('the API sends no activation email for a pending Safety request and sends it after Admin approval', async () => {
+  const f = fixture('SAFETY');
+  let response = await f.request('POST', { action: 'force-approval', version: f.app.version, reason: 'Management exception requested.', services: ['DELIVERY'] });
+  assert.equal(response.status, 200); assert.equal(f.sentMails.length, 0); assert.equal(f.approvals.length, 0);
+  const pending = (await response.json()).application;
+  response = await f.request('POST', { action: 'approve-force', version: pending.version, requestId: pending.events[0].details.requestId }, { id: 'admin', role: 'ADMIN', name: 'Admin' });
+  assert.equal(response.status, 200); assert.equal(f.sentMails.length, 1); assert.equal(f.approvals.length, 1);
+});
+
+test('Approve and Reject buttons follow the result gate while Force approval and Admin decisions use a reason', () => {
+  const now = Date.now();
+  const cases = [
+    [{ status: 'ASSESSED', orientationAt: new Date(now + 60000), assessedById: 'reviewer', assessmentNotes: 'Passed.', attendedAt: new Date(), assessmentPassedAt: new Date() }, false, false],
+    [{ status: 'ASSESSED', orientationAt: new Date(now - 60000), assessedById: 'reviewer', assessmentNotes: 'Passed.', attendedAt: new Date(), assessmentPassedAt: new Date() }, true, false],
+    [{ status: 'ORIENTATION_SCHEDULED', orientationAt: new Date(now - 60000), assessedById: 'reviewer', assessmentNotes: 'Absent.', attendedAt: null, assessmentPassedAt: null }, false, true],
+    [{ status: 'ORIENTATION_SCHEDULED', orientationAt: new Date(now - 60000) }, false, false],
+  ];
+  function render(app, admin = false) {
+    let slot = 0;
+    const react = { ...React, useEffect() {}, useState(initial) { const index = slot++; const value = index === 0 ? now : index === 1 ? ['DELIVERY'] : [3, 4, 5].includes(index) ? 'Recorded decision reason.' : typeof initial === 'function' ? initial() : initial; return [value, () => {}]; } };
+    const Component = loader({ react })('src/components/application-service-decision.tsx').ApplicationServiceDecision;
+    return renderToStaticMarkup(React.createElement(Component, { application: app, admin, disabled: false, onAction: async () => true }));
+  }
+  for (const [overrides, approve, reject] of cases) {
+    const html = render(fixture('SAFETY', overrides).app);
+    for (const [label, enabled] of [['Approve rider services', approve], ['Reject application', reject], ['Force approval', true]]) {
+      const match = html.match(new RegExp('<button([^>]*)>' + label + '</button>')); assert(match, label);
+      assert.equal(!match[1].includes('disabled'), enabled, label);
+    }
+  }
+  const pending = fixture('SAFETY', { status: 'FORCE_APPROVAL_PENDING' }).app;
+  pending.events = [{ action: 'FORCE_APPROVAL_REQUESTED', details: { requestId: 'request', reason: 'Recorded reason.', requestedById: 'staff', requestedByName: 'Safety Staff', requestedByRole: 'SAFETY', requestedAt: new Date().toISOString(), applicationVersion: pending.version, previousStatus: 'IN_REVIEW', vehicleClass: 'MOTORCYCLE', services: ['DELIVERY'] } }];
+  assert(!render(pending).includes('Approve force request'));
+  const adminHtml = render(pending, true); assert(adminHtml.includes('Approve force request')); assert(adminHtml.includes('Recorded reason.'));
+});
+
+test('only Admin receives notifications of pending force requests', async () => {
+  let queries = 0;
+  const db = { booking: { findMany: async () => [] }, supportTicket: { findMany: async () => [] }, supportMessage: { findMany: async () => [] }, workflowCase: { findMany: async () => [] }, riderApplication: { findMany: async () => { queries++; return [{ id: 'app', version: 2, updatedAt: new Date(), user: { name: 'Rider' } }]; } } };
+  for (const role of ['ADMIN', 'SAFETY']) {
+    const load = loader({ '@/lib/db': { db }, '@/lib/admin-access': {}, '@/lib/staff-access': { currentStaff: async () => ({ id: role, role }) } });
+    const response = await load('src/app/api/notifications/route.ts').GET(); assert.equal(response.status, 200);
+    const { items } = await response.json(); assert.equal(items.some(i => i.title === 'Force approval needs your decision'), role === 'ADMIN');
+  }
+  assert.equal(queries, 1);
 });
