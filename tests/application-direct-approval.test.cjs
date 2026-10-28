@@ -107,14 +107,21 @@ test('direct approval still requires a complete accepted checklist, verification
   }
 });
 
-test('Safety can complete an assessed demo but cannot grant it real services', async () => {
-  const f = fixture('SAFETY', { isDemo: true, status: 'ASSESSED', orientationAt: new Date(Date.now()-60000), attendedAt: new Date(), assessmentPassedAt: new Date(), assessedById: 'reviewer', assessmentNotes: 'Assessment passed.' });
-  await assert.rejects(f.review('activate', { services: ['DELIVERY'] }));
-  assert.equal((await f.review('complete-demo', { services: ['DELIVERY'] })).status, 'DEMO_COMPLETED');
-  assert.equal(f.approvals.length, 0); assert.equal(f.profileWrites(), 0);
-  assert.equal(f.audits[0].action, 'APPLICATION_COMPLETE-DEMO');
+for (const role of ['ADMIN', 'SAFETY']) for (const action of ['activate', 'complete-demo']) {
+ test(role + ' activates approved autofilled applications through ' + action, async () => {
+  const f = fixture(role, { isDemo: true, status: 'ASSESSED', orientationAt: new Date(Date.now()-60000), attendedAt: new Date(), assessmentPassedAt: new Date(), assessedById: 'reviewer', assessmentNotes: 'Assessment passed.' });
+  assert.equal((await f.review(action, { services: ['DELIVERY'] })).status, 'ACTIVE');
+  assert.equal(f.approvals.length, 1); assert.equal(f.profileWrites(), 1); assert.equal(f.audits[0].details.autofilled, true);
+  assert.equal(f.app.emails[0].payload.demo, undefined); assert.equal(f.app.emails[0].payload.autofilled, true);
+  const response=await f.request('GET');assert.equal(response.status,200);assert.equal((await response.json()).approvals.length,1);
+ });
+}
+test('previously completed autofill applications can receive the missing service approvals', async () => {
+ const f=fixture('ADMIN',{isDemo:true,status:'DEMO_COMPLETED',orientationAt:new Date(Date.now()-60000),attendedAt:new Date(),assessmentPassedAt:new Date(),assessedById:'reviewer',assessmentNotes:'Passed.'});
+ assert.equal((await f.review('activate',{services:['DELIVERY']})).status,'ACTIVE'); assert.equal(f.approvals.length,1);
+ await assert.rejects(f.review('activate',{services:['DELIVERY']}),/already active/);
+ const missing=fixture('ADMIN',{isDemo:true,status:'DEMO_COMPLETED'}); await assert.rejects(missing.review('activate',{services:['DELIVERY']}));
 });
-
 test('Admin and Safety UI expose direct approval and expanded audit history without a recommendation step', () => {
   for (const role of ['ADMIN', 'SAFETY']) {
     const f = fixture(role); let state = 0;
@@ -177,12 +184,11 @@ test('Admin can force approval immediately with a reason; denying a staff reques
   await assert.rejects(stale.review('approve-force', { requestId: proposed.events[0].details.requestId }, { id: 'admin', name: 'Admin', role: 'ADMIN' }), /no longer pending/);
 });
 
-test('force approval of demo data never grants real services', async () => {
-  const f = fixture('ADMIN', { isDemo: true });
-  assert.equal((await f.review('force-approval', { services: ['DELIVERY'], reason: 'Complete the demonstration before its scheduled time.' })).status, 'DEMO_COMPLETED');
-  assert.equal(f.approvals.length, 0); assert.equal(f.profileWrites(), 0);
+test('autofill does not change the audited Admin force approval behavior', async () => {
+ const f=fixture('ADMIN',{isDemo:true});
+ assert.equal((await f.review('force-approval',{services:['DELIVERY'],reason:'Approve for the presentation after checklist review.'})).status,'ACTIVE');
+ assert.equal(f.approvals.length,1);assert.equal(f.profileWrites(),1);assert.equal(f.audits[0].details.autofilled,true);
 });
-
 test('the API sends no activation email for a pending Safety request and sends it after Admin approval', async () => {
   const f = fixture('SAFETY');
   let response = await f.request('POST', { action: 'force-approval', version: f.app.version, reason: 'Management exception requested.', services: ['DELIVERY'] });

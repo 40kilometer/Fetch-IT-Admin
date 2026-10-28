@@ -8,7 +8,7 @@ export function orientationDecision(state: OrientationState, now = Date.now()) {
   const recorded = !!state.assessedById && !!state.assessmentNotes?.trim();
   const passed = !!state.attendedAt && !!state.assessmentPassedAt;
   const reviewable = ["ORIENTATION_SCHEDULED", "ASSESSED"].includes(state.status);
-  return { elapsed, recorded, passed, canApprove: ["ASSESSED", "ACTIVE"].includes(state.status) && elapsed && recorded && passed,
+  return { elapsed, recorded, passed, canApprove: ["ASSESSED", "ACTIVE", "DEMO_COMPLETED"].includes(state.status) && elapsed && recorded && passed,
     canReject: reviewable && elapsed && recorded && !passed,
     message: !Number.isFinite(at) ? "Schedule orientation first." : !elapsed ? "Decisions unlock after the scheduled orientation time." : !recorded ? "Record the orientation and assessment result first." : passed ? "Passed: the rider can be approved." : "Failed or absent: the rider can be rejected, or a reasoned force approval can be requested." };
 }

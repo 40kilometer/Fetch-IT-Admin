@@ -12,11 +12,10 @@ export function ApplicationServiceDecision({ application: app, approvals, admin,
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(timer); }, []);
   const gate = orientationDecision(app, now), request = pendingForceApproval(app);
   const active = (service: string) => approvals?.some(a => a.service === service && a.vehicleClass === app.vehicleClass && a.source === "APPLICATION" && !a.revokedAt && (!a.validUntil || new Date(a.validUntil).getTime() > now));
-  const allowedForce = ["SUBMITTED", "IN_REVIEW", "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED", "REJECTED", "ACTIVE"].includes(app.status);
+  const allowedForce = ["SUBMITTED", "IN_REVIEW", "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED", "REJECTED", "ACTIVE", "DEMO_COMPLETED"].includes(app.status);
   const selection = () => ({ services, operatingZone: (() => { try { return JSON.parse(zone); } catch { return null; } })() });
   async function submit(body: Record<string, unknown>) { if (await onAction(body)) { setServices([]); setForceReason(""); setRejection(""); setDenial(""); } }
   return <section className="oa-card" aria-label="Rider service decision"><h2>Approve or reject rider services</h2>
-    {app.isDemo && <p className="oa-note">This is a demo application. Approval completes the demonstration and grants no real service access.</p>}
     {app.status === "FORCE_APPROVAL_PENDING" ? <div className="oa-note"><h3>Force approval awaiting Admin</h3>{request ? <>
       <p>Requested by <strong>{request.requestedByName}</strong> · {request.services.join(" / ")}</p><p><strong>Reason:</strong> {request.reason}</p>
       {admin ? <><p>Your Admin decision applies immediately. No second approver is required.</p><button className="oa-primary" disabled={disabled} onClick={() => void submit({ action: "approve-force", requestId: request.requestId })}>Approve force request</button>
@@ -25,8 +24,8 @@ export function ApplicationServiceDecision({ application: app, approvals, admin,
     </> : <p>The request has changed. Refresh before continuing.</p>}</div> : <>
       <p role="status">{gate.message}</p>
       <fieldset disabled={disabled}><legend>Services covered by this decision</legend>{app.services.map(service => <label className="oa-check" key={service}><input type="checkbox" disabled={active(service)} checked={services.includes(service)} onChange={e => setServices(e.target.checked ? [...services, service] : services.filter(s => s !== service))} />{service}{active(service) ? " — already active" : ""}</label>)}</fieldset>
-      {!app.isDemo && app.vehicleClass === "TRICYCLE" && services.includes("RIDE") && <label>Verified permit operating-zone boundary<textarea value={zone} disabled={disabled} onChange={e => setZone(e.target.value)} placeholder="Closed JSON array of [longitude, latitude] points" /></label>}
-      <button className="oa-primary" disabled={disabled || !gate.canApprove || !services.length} onClick={() => void submit({ action: app.isDemo ? "complete-demo" : "activate", ...selection() })}>Approve rider services</button>
+      {app.vehicleClass === "TRICYCLE" && services.includes("RIDE") && <label>Verified permit operating-zone boundary<textarea value={zone} disabled={disabled} onChange={e => setZone(e.target.value)} placeholder="Closed JSON array of [longitude, latitude] points" /></label>}
+      <button className="oa-primary" disabled={disabled || !gate.canApprove || !services.length} onClick={() => void submit({ action: "activate", ...selection() })}>Approve rider services</button>
       <label>Rejection reason<textarea disabled={disabled || !gate.canReject} maxLength={2000} value={rejection} onChange={e => setRejection(e.target.value)} /></label>
       <button disabled={disabled || !gate.canReject || rejection.trim().length < 5} onClick={() => void submit({ action: "reject", reason: rejection })}>Reject application</button>
       {allowedForce && <div className="oa-force-approval"><h3>Force approval</h3><p>Accepted details and documents are still required. This overrides the orientation timing or result. {admin ? "Your Admin action activates the selected services immediately." : "Your request needs Admin approval before any service is activated."}</p>

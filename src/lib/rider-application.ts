@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import type { Prisma, RiderApplication, RiderApplicationDocument } from "@prisma/client";
 import { ApplicationError, SECTION_FIELDS, DOCUMENT_LABELS, normalizeFields, requiredDocuments, validateApplication, validateSelection, approvalExpiry, type Fields, type Review } from "./rider-application-policy";
 import { liveApprovalWhere, validOperatingZone } from "./rider-eligibility";
-import { assertRealApplication } from './application-demo-policy';
 import { randomUUID } from 'node:crypto';
 import { orientationDecision, forceApprovalRequest } from './application-decisions';
 
@@ -109,7 +108,7 @@ function reason(value: unknown) {
   return value.trim();
 }
 function invitationPayload(app: ApplicationDetail, at: Date, venue: string, instructions: string) {
-  return { name: (app.fields as Fields).legalName, applicationId: app.id, vehicle: app.vehicleClass, services: app.services.join(" / "), date: at.toISOString(), venue, instructions, demo: app.isDemo };
+  return { name: (app.fields as Fields).legalName, applicationId: app.id, vehicle: app.vehicleClass, services: app.services.join(" / "), date: at.toISOString(), venue, instructions, autofilled: app.isDemo };
 }
 export async function reviewApplication(id: string, actor: ApplicationActor, body: Record<string, unknown>) {
   if (!canReviewApplications(actor.role)) throw new ApplicationError("Application reviewer access required.", 403);
@@ -151,7 +150,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       const corrections = [...app.documents.filter(d => d.current && d.status === "NEEDS_CORRECTION").map(d => `${DOCUMENT_LABELS[d.kind]}: ${d.reason}`), ...Object.entries(app.fieldReviews as Record<string, Review>).filter(([,r]) => r.status === "NEEDS_CORRECTION").map(([key,r]) => `${key}: ${r.reason}`)];
       if (!corrections.length) throw new ApplicationError("Flag at least one item and explain its correction first.");
       data.status = "NEEDS_CORRECTION";
-      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:CORRECTIONS`, kind: "CORRECTIONS", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName || app.user.name, applicationId: id, corrections, demo: app.isDemo } } });
+      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:CORRECTIONS`, kind: "CORRECTIONS", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName || app.user.name, applicationId: id, corrections, autofilled: app.isDemo } } });
     } else if (body.action === "recommend") {
       if (!reviewStates.includes(app.status)) throw new ApplicationError("This application is not being reviewed.", 409);
       applicationReady(app); data.status = "RECOMMENDED"; data.recommendedById = actor.id; data.recommendedAt = new Date();
@@ -177,7 +176,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       const note = reason(body.reason);
       data.status = "REJECTED";
       eventDetails = { reason: note, orientationAt: app.orientationAt!.toISOString(), assessedById: app.assessedById! };
-      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:REJECTED`, kind: "REJECTED", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName, applicationId: id, reason: note, demo: app.isDemo } } });
+      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:REJECTED`, kind: "REJECTED", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName, applicationId: id, reason: note, autofilled: app.isDemo } } });
     } else if (body.action === "deny-force") {
       if (!admin) throw new ApplicationError("Admin must decide a force approval request.", 403);
       const request = forceApprovalRequest((await tx.riderApplicationEvent.findFirst({ where: { applicationId: id, action: "FORCE_APPROVAL_REQUESTED" }, orderBy: { createdAt: "desc" } }))?.details);
@@ -192,9 +191,8 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
         request = forceApprovalRequest((await tx.riderApplicationEvent.findFirst({ where: { applicationId: id, action: "FORCE_APPROVAL_REQUESTED" }, orderBy: { createdAt: "desc" } }))?.details);
         if (app.status !== "FORCE_APPROVAL_PENDING" || !request || request.requestId !== body.requestId || request.applicationVersion !== app.version || request.vehicleClass !== app.vehicleClass) throw new ApplicationError("This force approval request is no longer pending.", 409);
       }
-      if (!forced && body.action === 'activate') assertRealApplication(app);
-      if (body.action === 'complete-demo' && !app.isDemo) throw new ApplicationError('Only a demo application can complete the demo.', 403);
-      if (!approver || (forced ? !["SUBMITTED", "IN_REVIEW", "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED", "REJECTED", "ACTIVE", ...(request ? ["FORCE_APPROVAL_PENDING"] : [])].includes(app.status) : !["ASSESSED", "ACTIVE"].includes(app.status))) throw new ApplicationError("Activate services after the assessment passes.", 403);
+      if (body.action === 'complete-demo' && !app.isDemo) throw new ApplicationError('This shortcut is for an autofilled application.', 403);
+      if (!approver || (forced ? !["SUBMITTED", "IN_REVIEW", "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED", "REJECTED", "ACTIVE", "DEMO_COMPLETED", ...(request ? ["FORCE_APPROVAL_PENDING"] : [])].includes(app.status) : !["ASSESSED", "ACTIVE", "DEMO_COMPLETED"].includes(app.status))) throw new ApplicationError("Activate services after the assessment passes.", 403);
       applicationReady(app);
       if (!forced && (app.status === "ACTIVE" ? !app.orientationAt || app.orientationAt > new Date() || !app.attendedAt || !app.assessmentPassedAt : !orientationDecision(app).canApprove)) throw new ApplicationError("Record successful orientation and assessment first, after the scheduled time.");
       const forceReason = forced ? request?.reason ?? reason(body.reason) : null;
@@ -205,21 +203,21 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       if (alreadyApproved) throw new ApplicationError("A selected service is already active. Choose only services awaiting activation.", 409);
       const expiry = approvalExpiry(app.fields as Fields);
       const operatingZone = request?.operatingZone ?? body.operatingZone;
-      if (!app.isDemo && app.vehicleClass === "TRICYCLE" && services.includes("RIDE") && !validOperatingZone(operatingZone)) throw new ApplicationError("Provide the verified tricycle operating-zone polygon as a closed array of [longitude, latitude] points.");
+      if (app.vehicleClass === "TRICYCLE" && services.includes("RIDE") && !validOperatingZone(operatingZone)) throw new ApplicationError("Provide the verified tricycle operating-zone polygon as a closed array of [longitude, latitude] points.");
       if (forced && !admin) {
         const proposal = { requestId: randomUUID(), reason: forceReason!, requestedById: actor.id, requestedByName: actor.name, requestedByRole: actor.role, requestedAt: new Date().toISOString(), applicationVersion: app.version + 1, previousStatus: app.status, vehicleClass: app.vehicleClass, services, ...(operatingZone ? { operatingZone: operatingZone as Prisma.InputJsonValue } : {}) };
         await tx.riderApplication.update({ where: { id }, data: { status: "FORCE_APPROVAL_PENDING", version: { increment: 1 } } });
         await applicationEvent(tx, id, actor, "FORCE_APPROVAL_REQUESTED", proposal);
         return tx.riderApplication.findUniqueOrThrow({ where: { id }, include: detail });
       }
-      for (const service of app.isDemo ? [] : services) {
+      for (const service of services) {
         const zone = app.vehicleClass === "TRICYCLE" && service === "RIDE" ? { operatingZone: operatingZone as Prisma.InputJsonValue } : {};
         await tx.riderServiceApproval.upsert({ where: { userId_vehicleClass_service: { userId: app.userId, vehicleClass: app.vehicleClass, service: service as "DELIVERY" } }, create: { userId: app.userId, vehicleClass: app.vehicleClass, service: service as "DELIVERY", source: "APPLICATION", approvedById: actor.id, validUntil: expiry, ...zone }, update: { source: "APPLICATION", approvedById: actor.id, approvedAt: new Date(), validUntil: expiry, revokedAt: null, ...zone } });
       }
-      if (!app.isDemo) await tx.riderProfile.update({ where: { userId: app.userId }, data: { vehicleClass: app.vehicleClass, vehiclePlate: (app.fields as Fields).plateNumber } });
-      data.status = app.isDemo ? 'DEMO_COMPLETED' : "ACTIVE";
-      eventDetails = { services, vehicle: app.vehicleClass, validUntil: expiry.toISOString(), ...(forced ? { forceApproval: true, reason: forceReason!, ...(request ? { requestId: request.requestId, requestedById: request.requestedById, requestedByName: request.requestedByName } : {}) } : {}) };
-      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:ACTIVATED`, kind: "ACTIVATED", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName, applicationId: id, vehicle: app.vehicleClass, services: services.join(" / "), demo: app.isDemo } } });
+      await tx.riderProfile.update({ where: { userId: app.userId }, data: { vehicleClass: app.vehicleClass, vehiclePlate: (app.fields as Fields).plateNumber } });
+      data.status = "ACTIVE";
+      eventDetails = { autofilled: app.isDemo, services, vehicle: app.vehicleClass, validUntil: expiry.toISOString(), ...(forced ? { forceApproval: true, reason: forceReason!, ...(request ? { requestId: request.requestId, requestedById: request.requestedById, requestedByName: request.requestedByName } : {}) } : {}) };
+      await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:ACTIVATED`, kind: "ACTIVATED", recipient: app.user.email, payload: { name: (app.fields as Fields).legalName, applicationId: id, vehicle: app.vehicleClass, services: services.join(" / "), autofilled: app.isDemo } } });
     } else if (body.action === "reopen") {
       if (!admin) throw new ApplicationError("Admin access required.", 403);
       const note = reason(body.reason);
