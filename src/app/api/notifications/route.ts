@@ -1,31 +1,40 @@
 import { NextResponse } from "next/server";
-import { currentAdmin } from "@/lib/admin-access";
 import { db } from "@/lib/db";
 import { currentStaff } from "@/lib/staff-access";
-import { caseScope,hasPermission,supportScope } from "@/lib/staff-policy";
+import { caseScope, hasPermission, supportScope } from "@/lib/staff-policy";
+
 export async function GET() {
   try {
-    const staff=await currentStaff();
+    const staff = await currentStaff();
     if (!staff) return NextResponse.json({ error: "Sign in with an active staff account." }, { status: 401 });
-    if(!hasPermission(staff.role,'operations')) {
-      const cases=await db.workflowCase.findMany({where:{AND:[caseScope(staff),{status:{notIn:['RESOLVED','REJECTED']}}]},take:30,orderBy:{updatedAt:'desc'},select:{id:true,title:true,status:true,updatedAt:true}});
-      const tickets=hasPermission(staff.role,'support')?await db.supportTicket.findMany({where:{AND:[supportScope(staff),{status:{not:'RESOLVED'}}]},take:30,orderBy:{updatedAt:'desc'},select:{id:true,category:true,updatedAt:true}}):[];
-      return NextResponse.json({items:[...cases.map(c=>({id:c.id,title:c.title,detail:c.status,at:c.updatedAt.toISOString(),href:`/dashboard/cases/${c.id}`})),...tickets.map(t=>({id:t.id,title:'Support request',detail:t.category,at:t.updatedAt.toISOString(),href:`/dashboard/support/${t.id}`}))].sort((a,b)=>b.at.localeCompare(a.at)),checkedAt:new Date().toISOString()},{headers:{'Cache-Control':'private, no-store'}});
-    }
-    const since = new Date(Date.now() - 7 * 86400000);
-    const [created, cancelled, tickets, replies, forceRequests] = await Promise.all([
-      db.booking.findMany({ where: { createdAt: { gte: since } }, select: { id: true, refCode: true, type: true, dropoffLabel: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 100 }),
-      db.booking.findMany({ where: { status: "CANCELLED", cancelledAt: { gte: since } }, select: { id: true, refCode: true, dropoffLabel: true, cancelledAt: true }, orderBy: { cancelledAt: "desc" }, take: 100 }),
-      db.supportTicket.findMany({ where: { createdAt: { gte: since } }, select: { id: true, category: true, createdAt: true, booking: { select: { refCode: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
-      db.supportMessage.findMany({ where: { authorRole: "CUSTOMER", createdAt: { gte: since } }, select: { id: true, ticketId: true, body: true, createdAt: true, ticket: { select: { booking: { select: { refCode: true } }, customer: { select: { name: true } } } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 }),
-      db.riderApplication.findMany({ where: { status: "FORCE_APPROVAL_PENDING" }, select: { id: true, version: true, updatedAt: true, user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 30 }),
+    const operations = hasPermission(staff.role, "operations");
+    const support = hasPermission(staff.role, "support");
+    const finance = hasPermission(staff.role, "finance");
+    const overdue = new Date(Date.now() - 5 * 60_000);
+    const [cases, waiting, mismatches, tickets, applications] = await Promise.all([
+      db.workflowCase.findMany({ where: { AND: [caseScope(staff), { status: { not: "RESOLVED" } }] },
+        take: 50, orderBy: { updatedAt: "desc" }, select: { id: true, title: true, kind: true, status: true, version: true, updatedAt: true } }),
+      operations ? db.booking.findMany({ where: { status: "PENDING", riderId: null, createdAt: { lte: overdue },
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: overdue } }],
+        AND: [{ OR: [{ paymentMethod: "CASH" }, { paymentStatus: "PAID" }] }] },
+        select: { id: true, refCode: true, type: true, createdAt: true }, orderBy: { createdAt: "asc" }, take: 30 }) : [],
+      finance ? db.$queryRaw<{ id: string; refCode: string; updatedAt: Date }[]>`
+        SELECT "id", "refCode", "updatedAt" FROM "Booking"
+        WHERE "paymentMethod" = 'CASH' AND "paymentStatus" = 'PENDING'
+          AND "customerPaidAmount" IS NOT NULL AND "riderReceivedAmount" IS NOT NULL
+          AND ("customerPaidAmount" <> "totalFare" OR "riderReceivedAmount" <> "totalFare")
+        ORDER BY "updatedAt" DESC LIMIT 30` : [],
+      support ? db.supportTicket.findMany({ where: { AND: [supportScope(staff), { status: { not: "RESOLVED" } }] },
+        select: { id: true, category: true, createdAt: true, lastCustomerMessageAt: true, lastAdminReplyAt: true, booking: { select: { refCode: true } } }, orderBy: { lastCustomerMessageAt: "desc" }, take: 100 }) : [],
+      operations ? db.riderApplication.findMany({ where: { status: { in: ["SUBMITTED", "IN_REVIEW", "FORCE_APPROVAL_PENDING"] } },
+        select: { id: true, version: true, status: true, updatedAt: true, user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 30 }) : [],
     ]);
     const items = [
-      ...forceRequests.map(a => ({ id: `force:${a.id}:${a.version}`, title: "Force approval needs your decision", detail: a.user.name, at: a.updatedAt.toISOString(), href: `/dashboard/applications/${a.id}` })),
-      ...created.map(b => ({ id: `new:${b.id}`, title: `New ${b.type === "RIDE" ? "ride" : "delivery"}`, detail: `${b.refCode} · ${b.dropoffLabel}`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
-      ...cancelled.map(b => ({ id: `cancel:${b.id}`, title: "Booking cancelled", detail: `${b.refCode} · ${b.dropoffLabel}`, at: b.cancelledAt!.toISOString(), href: `/dashboard/bookings/${b.id}` })),
-      ...tickets.map(t => ({ id: `support:${t.id}`, title: "New support request", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.createdAt.toISOString(), href: `/dashboard/support/${t.id}` })),
-      ...replies.map(m => ({ id: `support-reply:${m.id}`, title: "Customer replied", detail: `${m.ticket.booking?.refCode ?? "Account help"} · ${m.ticket.customer.name}: ${m.body.slice(0, 120)}`, at: m.createdAt.toISOString(), href: `/dashboard/support/${m.ticketId}` })),
+      ...cases.map(c => ({ id: `case:${c.id}:${c.version}`, title: c.title, detail: `${c.kind} · ${c.status.replaceAll("_", " ")}`, at: c.updatedAt.toISOString(), href: `/dashboard/cases/${c.id}` })),
+      ...waiting.map(b => ({ id: `unassigned:${b.id}`, title: `${b.type === "RIDE" ? "Ride" : "Delivery"} needs a rider`, detail: `${b.refCode} · Waiting more than 5 minutes after pickup became due`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
+      ...mismatches.map(b => ({ id: `payment:${b.id}:${b.updatedAt.toISOString()}`, title: "Cash payment needs review", detail: `${b.refCode} · Confirmed amounts do not match the fare`, at: b.updatedAt.toISOString(), href: operations ? `/dashboard/bookings/${b.id}` : `/dashboard/finance?ref=${encodeURIComponent(b.refCode)}` })),
+      ...tickets.filter(t => !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
+      ...applications.map(a => ({ id: `application:${a.id}:${a.version}`, title: a.status === "FORCE_APPROVAL_PENDING" ? "Force approval needs your decision" : "Rider application needs review", detail: a.user.name, at: a.updatedAt.toISOString(), href: `/dashboard/applications/${a.id}` })),
     ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100);
     return NextResponse.json({ items, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "Notifications are unavailable. Please retry." }, { status: 503 }); }

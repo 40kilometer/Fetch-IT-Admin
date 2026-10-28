@@ -43,10 +43,10 @@ export function AdminInbox({ adminId }: { adminId: string }) {
       {unread > 0 && <span className="notification-count" aria-hidden="true">{unread > 99 ? "99+" : unread}</span>}
     </button>
     <dialog ref={dialog} className="inbox-dialog" aria-labelledby="inbox-title">
-      <div className="page-heading"><div><h2 id="inbox-title">Notifications</h2><p className="muted small">Latest 100 updates from the past seven days.</p></div><button className="btn icon-button" aria-label="Close notifications" onClick={() => dialog.current?.close()}>✕</button></div>
+      <div className="page-heading"><div><h2 id="inbox-title">Notifications</h2><p className="muted small">Items that need attention, based on your role. Routine bookings stay in the bookings list.</p></div><button className="btn icon-button" aria-label="Close notifications" onClick={() => dialog.current?.close()}>✕</button></div>
       <div className="inbox-tools"><button className="btn" disabled={!unread} onClick={() => mark(items.map(item => item.id))}>Mark all as read</button><button className="btn" onClick={() => setRetry(v => v + 1)}>Refresh inbox</button></div>
       {error && <p className="error-message" role="alert">{error}{error.includes("Sign in") && <> <a href="/login">Sign in</a></>}</p>}
-      {!items.length && !error && <p className="empty-state">{checked ? "No recent notifications." : "Loading notifications…"}</p>}
+      {!items.length && !error && <p className="empty-state">{checked ? "You’re all caught up. No items need attention." : "Loading notifications…"}</p>}
       <ul className="inbox-list">{items.map(item => <li key={item.id}><button className={`inbox-item ${read.includes(item.id) ? "" : "unread"}`} onClick={() => { mark([item.id]); dialog.current?.close(); router.push(item.href); }}><span className="inbox-item-title">{item.title}{!read.includes(item.id) && <span className="unread-dot" aria-label="Unread" />}</span><span>{item.detail}</span><time className="muted small" dateTime={item.at}>{new Date(item.at).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</time></button></li>)}</ul>
       <p className="muted small">Read status is saved on this device. {checked && `Checked ${new Date(checked).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila" })}.`}</p>
     </dialog>
