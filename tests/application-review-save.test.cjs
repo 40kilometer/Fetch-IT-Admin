@@ -102,7 +102,7 @@ function hooks() {
 function elements(tree) {
   if (!tree || typeof tree !== 'object') return [];
   if (Array.isArray(tree)) return tree.flatMap(elements);
-  return [tree, ...elements(tree.props?.children)];
+  return [tree, ...elements(tree.props?.children), ...elements(tree.props?.items?.map(item => item.content)), ...(tree.type?.name === "ApplicationChecklist" ? elements(tree.type(tree.props)) : [])];
 }
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 

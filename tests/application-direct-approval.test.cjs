@@ -122,7 +122,8 @@ test('previously completed autofill applications can receive the missing service
  await assert.rejects(f.review('activate',{services:['DELIVERY']}),/already active/);
  const missing=fixture('ADMIN',{isDemo:true,status:'DEMO_COMPLETED'}); await assert.rejects(missing.review('activate',{services:['DELIVERY']}));
 });
-test('Admin and Safety UI expose direct approval and expanded audit history without a recommendation step', () => {
+
+test('Admin and Safety UI expose direct approval and accessible audit history without a recommendation step', () => {
   for (const role of ['ADMIN', 'SAFETY']) {
     const f = fixture(role); let state = 0;
     const react = { ...React, useState: initial => [state++ === 0 ? { application: f.app, actor: { id: f.actor.id, canActivate: true, canManage: role === 'ADMIN' } } : initial, () => {}], useRef: value => ({ current: value }), useCallback: fn => fn, useEffect() {} };
@@ -130,7 +131,7 @@ test('Admin and Safety UI expose direct approval and expanded audit history with
     const Component = load('src/components/rider-applications.tsx').RiderApplications;
     const html = renderToStaticMarkup(React.createElement(Component, { id: f.app.id }));
     assert(html.includes('Approve &amp; send invitation with PDF')); assert(!html.includes('Recommend approval'));
-    assert(html.includes('details class="oa-card" open=""')); assert(html.includes('Application audit history'));
+    assert(html.includes('aria-label="Application stages"')); assert(html.includes('History · 0')); assert(html.includes('Application audit history')); assert(html.includes('role="tabpanel"'));
     assert.equal(html.includes('Reopen &amp; revoke service access'), role === 'ADMIN');
   }
 });

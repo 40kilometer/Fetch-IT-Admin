@@ -2,7 +2,7 @@
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 type Field = { name: string; label: string; type?: string; value?: string | number; options?: { value: string; label: string }[]; required?: boolean };
-export function ActionForm({ url, method = "POST", fields = [], hidden = {}, label = "Save", confirm = false }: { url: string; method?: string; fields?: Field[]; hidden?: Record<string, unknown>; label?: string; confirm?: boolean }) {
+export function ActionForm({ url, method = "POST", fields = [], hidden = {}, label = "Save", confirm = false, collapsible = false }: { url: string; method?: string; fields?: Field[]; hidden?: Record<string, unknown>; label?: string; confirm?: boolean; collapsible?: boolean }) {
   const router = useRouter(), form = useRef<HTMLFormElement>(null), dialog = useRef<HTMLDialogElement>(null), pending = useRef(false), snapshot = useRef<Record<string, unknown>>({}), id = useId();
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [error, setError] = useState(""), [conflict, setConflict] = useState(false), [confirming, setConfirming] = useState(false);
   async function save() {
@@ -14,7 +14,7 @@ export function ActionForm({ url, method = "POST", fields = [], hidden = {}, lab
     } catch (error) { setError(error instanceof Error ? error.message : "Please retry."); }
     finally { pending.current = false; setBusy(false); }
   }
-  return <><form ref={form} className="card staff-form" aria-busy={busy} onSubmit={event => {
+  const content = <><form ref={form} className="card staff-form" aria-busy={busy} onSubmit={event => {
     event.preventDefault(); if (pending.current) return;
     const data = new FormData(event.currentTarget), body: Record<string, unknown> = { ...hidden };
     fields.forEach(field => body[field.name] = field.type === "number" ? Number(data.get(field.name)) : data.get(field.name));
@@ -24,4 +24,5 @@ export function ActionForm({ url, method = "POST", fields = [], hidden = {}, lab
     {message && <p role="status" className="success-message">{message}</p>}{error && !confirming && <p role="alert" className="error-message">{error}</p>}{conflict && <button className="btn" type="button" onClick={() => { dialog.current?.close(); router.refresh(); }}>Refresh record (keep entered text)</button>}<button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : label}</button></form>
     <dialog ref={dialog} className="inbox-dialog" aria-labelledby={id} onClose={() => setConfirming(false)} onCancel={event => { if (pending.current) event.preventDefault(); }}><h2 id={id}>{label}?</h2><p>Review the information you entered before confirming this change.</p>{error && <p role="alert" className="error-message">{error}</p>}<div className="staff-actions"><button autoFocus className="btn" disabled={busy} onClick={() => dialog.current?.close()}>Back to form</button><button className="btn btn-primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : label}</button></div></dialog>
   </>;
+  return collapsible ? <details className="action-disclosure"><summary>{label}</summary>{content}</details> : content;
 }

@@ -13,7 +13,7 @@ export async function DemoActivityNotice({ since, until }: { since?: Date; until
 const STAGES = [
   ['DRAFT', 'Draft'], ['SUBMITTED', 'Submitted'], ['IN_REVIEW', 'In review'], ['NEEDS_CORRECTION', 'Needs correction'],
   ['RECOMMENDED', 'Recommended'], ['ORIENTATION_SCHEDULED', 'Orientation scheduled'], ['ASSESSED', 'Assessed'], ['ACTIVE', 'Active'],
-  ['DEMO_COMPLETED', 'Demo completed'],
+  ['DEMO_COMPLETED', 'Awaiting activation'], ['FORCE_APPROVAL_PENDING', 'Force approval pending'], ['REJECTED', 'Rejected'],
 ];
 export async function RiderApplicationSummary() {
   const [groups, demoCount] = await Promise.all([db.riderApplication.groupBy({ by: ['status'], _count: { _all: true } }), db.riderApplication.count({ where: { isDemo: true } })]);
@@ -30,6 +30,6 @@ export async function RiderApplicationSummary() {
         <span>{label}</span><div aria-hidden="true" style={{ height: 10, background: '#edf1ea', borderRadius: 10, overflow: 'hidden' }}><div style={{ height: '100%', width: `${count / max * 100}%`, background: status === 'NEEDS_CORRECTION' ? '#cf8a35' : '#b94c24', borderRadius: 10 }}/></div><strong style={{ textAlign: 'right' }}>{count}</strong>
       </li>;
     })}</ul> : <p className="muted small">New applications will appear here when riders start their application.</p>}
-    <p className="muted small" style={{ margin: '18px 0 0' }}>{demoCount} labeled demo applications included. Filter “For demo” in Applications to review them separately. Demo completion grants no real rider service access.</p>
+    <p className="muted small" style={{ margin: '18px 0 0' }}>{demoCount} autofilled applications included. Filter “Autofilled” in Applications to review them separately. Normal orientation and service approval apply.</p>
   </section>;
 }
