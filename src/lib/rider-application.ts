@@ -6,7 +6,8 @@ import { assertRealApplication } from './application-demo-policy';
 
 export type ApplicationActor = { id: string; name: string; role: string };
 export const canReviewApplications = (role: string) => ["ADMIN", "SAFETY", "SUPERADMIN"].includes(role);
-export const canActivateApplications = (role: string) => ["ADMIN", "SUPERADMIN"].includes(role);
+export const canActivateApplications = canReviewApplications;
+export const canManageApplications = (role: string) => ["ADMIN", "SUPERADMIN"].includes(role);
 const detail = { documents: { orderBy: { createdAt: "desc" as const } }, events: { orderBy: { createdAt: "desc" as const }, take: 80 }, emails: { orderBy: { createdAt: "desc" as const }, take: 20 }, user: { select: { id: true, name: true, email: true, isBanned: true } } };
 export const applicationDetail = detail;
 export type ApplicationDetail = Prisma.RiderApplicationGetPayload<{ include: typeof detail }>;
@@ -100,7 +101,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
     const app = await lockApplication(tx, id, body.version);
     await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id"=${app.userId} FOR UPDATE`;
     if (app.user.isBanned) throw new ApplicationError("This account is restricted.", 403);
-    const admin = canActivateApplications(actor.role);
+    const admin = canManageApplications(actor.role), approver = canActivateApplications(actor.role);
     if (body.action === "claim") {
       if (app.assignedToId && app.assignedToId !== actor.id) throw new ApplicationError("Another reviewer has claimed this application.", 409);
     } else if (!admin && app.assignedToId !== actor.id) throw new ApplicationError("Claim this application before reviewing it.", 403);
@@ -139,8 +140,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       if (!reviewStates.includes(app.status)) throw new ApplicationError("This application is not being reviewed.", 409);
       applicationReady(app); data.status = "RECOMMENDED"; data.recommendedById = actor.id; data.recommendedAt = new Date();
     } else if (body.action === "schedule") {
-      if (!admin || !["RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED"].includes(app.status)) throw new ApplicationError("An admin must schedule an application recommended for approval.", 403);
-      if (app.recommendedById === actor.id) throw new ApplicationError("A different admin must approve the recommendation.", 403);
+      if (!approver || !["SUBMITTED", "IN_REVIEW", "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED"].includes(app.status)) throw new ApplicationError("Approve a submitted and reviewed application before scheduling orientation.", 403);
       applicationReady(app);
       const at = new Date(String(body.orientationAt));
       if (!Number.isFinite(at.getTime()) || at <= new Date()) throw new ApplicationError("Choose a future orientation time.");
@@ -148,7 +148,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       data.status = "ORIENTATION_SCHEDULED"; data.orientationAt = at; data.orientationVenue = venue; data.orientationInstructions = instructions;
       data.attendedAt = null; data.assessmentPassedAt = null; data.assessedById = null; data.assessmentNotes = null;
       await tx.riderApplicationEmail.create({ data: { applicationId: id, sourceId: `${id}:${app.version}:ORIENTATION`, kind: "ORIENTATION", recipient: app.user.email, payload: invitationPayload(app, at, venue, instructions) } });
-      eventDetails = { orientationAt: at.toISOString(), venue };
+      eventDetails = { orientationAt: at.toISOString(), venue, directApproval: true, approverRole: actor.role };
     } else if (body.action === "assessment") {
       if (!["ORIENTATION_SCHEDULED", "ASSESSED"].includes(app.status) || !app.orientationAt || app.orientationAt > new Date()) throw new ApplicationError("Record attendance after the scheduled orientation begins.");
       if (typeof body.attended !== "boolean" || typeof body.passed !== "boolean" || (body.passed && !body.attended)) throw new ApplicationError("Confirm attendance and assessment result.");
@@ -159,8 +159,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
     } else if (body.action === "activate" || body.action === 'complete-demo') {
       if (body.action === 'activate') assertRealApplication(app);
       else if (!app.isDemo) throw new ApplicationError('Only a demo application can complete the demo.', 403);
-      if (!admin || !["ASSESSED", "ACTIVE"].includes(app.status)) throw new ApplicationError("An admin can activate services after the assessment passes.", 403);
-      if (app.recommendedById === actor.id || app.assessedById === actor.id) throw new ApplicationError("A different admin must confirm the review and assessment.", 403);
+      if (!approver || !["ASSESSED", "ACTIVE"].includes(app.status)) throw new ApplicationError("Activate services after the assessment passes.", 403);
       applicationReady(app);
       if (!app.attendedAt || !app.assessmentPassedAt) throw new ApplicationError("Record successful orientation and assessment first.");
       const services = body.services as string[];

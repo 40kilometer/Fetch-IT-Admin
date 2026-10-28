@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "./db";
-import { applicationDetail, publicApplication, reviewApplication, canReviewApplications, canActivateApplications, type ApplicationActor } from "./rider-application";
+import { applicationDetail, publicApplication, reviewApplication, canReviewApplications, canActivateApplications, canManageApplications, type ApplicationActor } from "./rider-application";
 import { RateLimitError } from "./request-guard";
 import { ApplicationError } from "./rider-application-policy";
 import { readApplicationDocument } from "./application-storage";
@@ -31,11 +31,11 @@ export async function staffApplicationRequest(req: NextRequest, actor: Applicati
     }
     const app = await db.riderApplication.findUnique({ where: { id }, include: applicationDetail });
     if (!app) throw new ApplicationError("Application unavailable.", 404);
-    if (!canActivateApplications(actor.role) && app.assignedToId && app.assignedToId !== actor.id) throw new ApplicationError("This application belongs to another reviewer.", 403);
+    if (!canManageApplications(actor.role) && app.assignedToId && app.assignedToId !== actor.id) throw new ApplicationError("This application belongs to another reviewer.", 403);
     if (req.method === "GET") {
       const docId = req.nextUrl.searchParams.get("document");
       if (docId) {
-        if (!canActivateApplications(actor.role) && app.assignedToId !== actor.id) throw new ApplicationError("Claim the application before opening documents.", 403);
+        if (!canManageApplications(actor.role) && app.assignedToId !== actor.id) throw new ApplicationError("Claim the application before opening documents.", 403);
         const doc = app.documents.find(d => d.id === docId); if (!doc) throw new ApplicationError("Document not found.", 404);
         return readApplicationDocument(app.id, doc);
       }
@@ -46,18 +46,20 @@ export async function staffApplicationRequest(req: NextRequest, actor: Applicati
         return pdfResponse(await orientationLetter(email.payload as never));
       }
       const approvals = await db.riderServiceApproval.findMany({ where: { userId: app.userId } });
-      return NextResponse.json({ application: publicApplication(app, true), approvals, actor: { id: actor.id, canActivate: canActivateApplications(actor.role) } });
+      return NextResponse.json({ application: publicApplication(app, true), approvals, actor: { id: actor.id, canActivate: canActivateApplications(actor.role), canManage: canManageApplications(actor.role) } });
     }
     if (!body) throw new ApplicationError("Request details are required.");
     if (body.action === "preview") {
-      if (!canActivateApplications(actor.role)) throw new ApplicationError("Admin access required.", 403);
+      if (!canActivateApplications(actor.role)) throw new ApplicationError("Application approval access required.", 403);
+      if (!canManageApplications(actor.role) && app.assignedToId !== actor.id) throw new ApplicationError("Claim the application before scheduling orientation.", 403);
       const at = new Date(String(body.orientationAt));
       if (!Number.isFinite(at.getTime()) || typeof body.venue !== "string" || body.venue.length > 2000 || typeof body.instructions !== "string" || body.instructions.length > 2000) throw new ApplicationError("Complete the schedule details.");
       const p = { name: (app.fields as Record<string, string>).legalName, applicationId: app.id, vehicle: app.vehicleClass, services: app.services.join(" / "), date: at.toISOString(), venue: body.venue, instructions: body.instructions, demo: app.isDemo };
       return body.pdf ? pdfResponse(await orientationLetter(p)) : NextResponse.json(applicationMessage("ORIENTATION", p));
     }
     if (body.action === "email") {
-      if (!canActivateApplications(actor.role)) throw new ApplicationError("Admin access required.", 403);
+      if (!canActivateApplications(actor.role)) throw new ApplicationError("Application approval access required.", 403);
+      if (!canManageApplications(actor.role) && app.assignedToId !== actor.id) throw new ApplicationError("Claim the application before sending its messages.", 403);
       const email = app.emails.find(e => e.id === body.emailId);
       if (!email) throw new ApplicationError("Email not found.", 404);
       if (email.id !== app.emails.find(e => e.kind === email.kind)?.id || !({ CORRECTIONS: ["NEEDS_CORRECTION"], ORIENTATION: ["ORIENTATION_SCHEDULED", "ASSESSED", "ACTIVE", "DEMO_COMPLETED"], ACTIVATED: ["ACTIVE", "DEMO_COMPLETED"] } as Record<string, string[]>)[email.kind]?.includes(app.status)) throw new ApplicationError("This message has been superseded by the current application status or schedule.", 409);
