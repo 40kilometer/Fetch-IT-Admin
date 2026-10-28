@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { SECTION_FIELDS, FIELD_LABELS, DOCUMENT_LABELS, type Fields, type Review } from "@/lib/rider-application-policy";
 import "./rider-applications.css";
@@ -13,6 +13,7 @@ const label = (s: string) => s.replaceAll("_", " ").toLowerCase().replace(/^./, 
 const stamp = (date?: string) => date ? new Date(date).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) + " PHT" : "Not scheduled";
 export function RiderApplications({ id }: { id?: string }) {
   const lab = useLocalDemo();
+  const mutationVersion = useRef(0);
   const [data, setData] = useState<State>({}), [error, setError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true);
   const [applicationMode, setApplicationMode] = useState('');
   const [query, setQuery] = useState(""), [filter, setFilter] = useState(""), [cursor, setCursor] = useState("");
@@ -20,23 +21,27 @@ export function RiderApplications({ id }: { id?: string }) {
   const [zone, setZone] = useState(""), [preview, setPreview] = useState(""), [attended, setAttended] = useState(false), [passed, setPassed] = useState(false), [notes, setNotes] = useState(""), [services, setServices] = useState<string[]>([]);
   const endpoint = `/api/rider-applications${id ? "/" + encodeURIComponent(id) : ""}`;
   const load = useCallback(async (background = false, signal?: AbortSignal) => {
+    const startedAtVersion = mutationVersion.current;
     if (!background) { setLoading(true); setError(""); }
     try {
       const r = await fetch(id ? endpoint : `${endpoint}?${new URLSearchParams({ q: query, status: filter, cursor, mode: applicationMode })}`, { cache: "no-store", signal }); const value = await r.json();
+      if (signal?.aborted || mutationVersion.current !== startedAtVersion) return;
       if (!r.ok) throw new Error(value.error || "Could not load applications."); setData(value);
     } catch (e) { if (!signal?.aborted && !background) setError(e instanceof Error ? e.message : "Could not load applications."); } finally { if (!background) setLoading(false); }
   }, [id, endpoint, query, filter, cursor, applicationMode]);
   // Synchronize the queue with the current route, search and status filters.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
-  useVisiblePoll(!busy ? endpoint : '', signal => load(true, signal));
+  useVisiblePoll(!busy ? endpoint : '', signal => load(true, signal), 10000, false);
   async function action(body: Record<string, unknown>) {
+    mutationVersion.current++;
     setBusy(true); setError("");
     try {
       const r = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: data.application?.version, ...body }) }); const result = await r.json();
       if (!r.ok) throw new Error(result.error || "Could not save this review.");
-      if (body.action === "preview") setPreview(result.text); else { if (body.action === "activate") setServices([]); setData(previous => ({ ...previous, ...result })); await load(); }
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not save this review."); } finally { setBusy(false); }
+      if (body.action === "preview") setPreview(result.text); else { if (body.action === "activate") setServices([]); setData(previous => ({ ...previous, ...result })); }
+      return true;
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not save this review."); return false; } finally { setBusy(false); }
   }
   const app = data.application, admin = data.actor?.canActivate;
   const orientation = () => ({ orientationAt: schedule.date ? new Date(schedule.date + "+08:00").toISOString() : "", venue: schedule.venue, instructions: schedule.instructions });
@@ -73,11 +78,17 @@ export function RiderApplications({ id }: { id?: string }) {
     <details className="oa-card"><summary>Application activity</summary>{app.events.map(event => <p key={event.id}><strong>{label(event.action)}</strong> · {event.actorName}<br/><small>{stamp(event.createdAt)}</small></p>)}</details>
   </section>;
 }
-function ReviewControls({ disabled, onReview, allowNA = false }: { disabled: boolean; allowNA?: boolean; onReview: (status: string, reason: string) => Promise<void> }) {
+function ReviewControls({ disabled, onReview, allowNA = false }: { disabled: boolean; allowNA?: boolean; onReview: (status: string, reason: string) => Promise<boolean> }) {
   const [status, setStatus] = useState("ACCEPTED"), [reason, setReason] = useState("");
-  return <form className="oa-review" onSubmit={(e: FormEvent) => { e.preventDefault(); void onReview(status, reason); }}><label>Review decision<select value={status} onChange={e => setStatus(e.target.value)}><option value="ACCEPTED">Accepted</option><option value="NEEDS_CORRECTION">Needs correction</option>{allowNA && <option value="NOT_APPLICABLE">Not applicable — optional documents only</option>}</select></label>{status === "NEEDS_CORRECTION" && <label>Explain exactly what to replace<textarea required minLength={5} maxLength={2000} value={reason} onChange={e => setReason(e.target.value)}/></label>}<button disabled={disabled}>Save decision</button></form>;
+  const [saving, setSaving] = useState(false), [saved, setSaved] = useState(false);
+  async function save() {
+    if (disabled || saving) return;
+    setSaving(true); setSaved(false);
+    try { setSaved(await onReview(status, reason)); } finally { setSaving(false); }
+  }
+  return <form className="oa-review" aria-busy={saving} onSubmit={(e: FormEvent) => { e.preventDefault(); void save(); }}><label>Review decision<select disabled={disabled || saving} value={status} onChange={e => { setStatus(e.target.value); setSaved(false); }}><option value="ACCEPTED">Accepted</option><option value="NEEDS_CORRECTION">Needs correction</option>{allowNA && <option value="NOT_APPLICABLE">Not applicable — optional documents only</option>}</select></label>{status === "NEEDS_CORRECTION" && <label>Explain exactly what to replace<textarea disabled={disabled || saving} required minLength={5} maxLength={2000} value={reason} onChange={e => { setReason(e.target.value); setSaved(false); }}/></label>}<button disabled={disabled || saving}>{saving ? "Saving…" : "Save decision"}</button>{saved && <p role="status">Decision saved.</p>}</form>;
 }
-function EmailItem({ email, localDemo, canSend, disabled, resend }: { localDemo: boolean; email: Application["emails"][number]; canSend: boolean; disabled: boolean; resend: (confirm: boolean) => Promise<void> }) {
+function EmailItem({ email, localDemo, canSend, disabled, resend }: { localDemo: boolean; email: Application["emails"][number]; canSend: boolean; disabled: boolean; resend: (confirm: boolean) => Promise<boolean> }) {
   const [confirmed, setConfirmed] = useState(false);
   return <div className="oa-email"><strong>{label(email.kind)}</strong> · {email.status === "SENT" ? localDemo ? "Captured in local demo inbox" : "Accepted by mail server" : label(email.status)}<small>{stamp(email.createdAt)}</small>{canSend && email.status !== "SENT" && <><label className="oa-check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}/>I checked the mailbox; resend if the previous outcome is uncertain.</label><button disabled={disabled} onClick={() => void resend(confirmed)}>Retry email</button></>}</div>;
 }
