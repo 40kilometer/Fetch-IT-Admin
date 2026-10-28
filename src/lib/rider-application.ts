@@ -115,8 +115,8 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
     let eventDetails: Prisma.InputJsonValue = {};
     const reviewStates = ["SUBMITTED", "IN_REVIEW"];
     if (body.action === "claim") {
-      if (!reviewStates.includes(app.status)) throw new ApplicationError("This application is not ready for review.", 409);
-      data.assignedToId = actor.id; data.status = "IN_REVIEW";
+      if (![...reviewStates, "RECOMMENDED", "ORIENTATION_SCHEDULED", "ASSESSED", "REJECTED"].includes(app.status)) throw new ApplicationError("This application is not ready for review.", 409);
+      data.assignedToId = actor.id; data.status = app.status === "SUBMITTED" ? "IN_REVIEW" : app.status;
     } else if (body.action === "review") {
       if (!reviewStates.includes(app.status)) throw new ApplicationError("Wait for submission before reviewing documents.", 409);
       if (!["ACCEPTED", "NEEDS_CORRECTION", "NOT_APPLICABLE"].includes(String(body.status))) throw new ApplicationError("Choose a valid document status.");

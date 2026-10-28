@@ -86,6 +86,14 @@ test('Safety approval retains assignment boundaries and cannot reopen applicatio
   assert.equal(own.audits.length, 0);
 });
 
+test('Safety can claim an unassigned orientation or assessment without resetting its result', async () => {
+  for (const status of ['ORIENTATION_SCHEDULED', 'ASSESSED', 'REJECTED']) {
+    const at = new Date(Date.now() - 60000), f = fixture('SAFETY', { assignedToId: null, status, orientationAt: at, assessedById: 'prior-reviewer', assessmentNotes: 'Prior recorded result.' });
+    const claimed = await f.review('claim'); assert.equal(claimed.status, status); assert.equal(claimed.assignedToId, f.actor.id);
+    assert.equal(claimed.orientationAt.getTime(), at.getTime()); assert.equal(claimed.assessedById, 'prior-reviewer');
+  }
+});
+
 test('direct approval still requires a complete accepted checklist, verification, orientation and assessment', async () => {
   for (const overrides of [{ fieldReviews: {} }, { documents: [] }, { emailVerifiedAt: null }, { user: { isBanned: true } }]) {
     const f = fixture('SAFETY', overrides); await assert.rejects(f.review('schedule', schedule())); assert.equal(f.audits.length, 0);
