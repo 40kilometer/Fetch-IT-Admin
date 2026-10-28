@@ -13,9 +13,10 @@ export async function DemoActivityNotice({ since, until }: { since?: Date; until
 const STAGES = [
   ['DRAFT', 'Draft'], ['SUBMITTED', 'Submitted'], ['IN_REVIEW', 'In review'], ['NEEDS_CORRECTION', 'Needs correction'],
   ['RECOMMENDED', 'Recommended'], ['ORIENTATION_SCHEDULED', 'Orientation scheduled'], ['ASSESSED', 'Assessed'], ['ACTIVE', 'Active'],
+  ['DEMO_COMPLETED', 'Demo completed'],
 ];
 export async function RiderApplicationSummary() {
-  const groups = await db.riderApplication.groupBy({ by: ['status'], _count: { _all: true } });
+  const [groups, demoCount] = await Promise.all([db.riderApplication.groupBy({ by: ['status'], _count: { _all: true } }), db.riderApplication.count({ where: { isDemo: true } })]);
   const counts = new Map(groups.map(g => [g.status, g._count._all]));
   const total = groups.reduce((n, g) => n + g._count._all, 0), max = Math.max(1, ...groups.map(g => g._count._all));
   return <section className="card" aria-labelledby="application-pipeline-title" style={{ padding: 22, marginTop: 22 }}>
@@ -29,6 +30,6 @@ export async function RiderApplicationSummary() {
         <span>{label}</span><div aria-hidden="true" style={{ height: 10, background: '#edf1ea', borderRadius: 10, overflow: 'hidden' }}><div style={{ height: '100%', width: `${count / max * 100}%`, background: status === 'NEEDS_CORRECTION' ? '#cf8a35' : '#b94c24', borderRadius: 10 }}/></div><strong style={{ textAlign: 'right' }}>{count}</strong>
       </li>;
     })}</ul> : <p className="muted small">New applications will appear here when riders start their application.</p>}
-    <p className="muted small" style={{ margin: '18px 0 0' }}>Applicants whose names begin with “Demo” are synthetic examples. Review and activation remain separate steps.</p>
+    <p className="muted small" style={{ margin: '18px 0 0' }}>{demoCount} labeled demo applications included. Filter “For demo” in Applications to review them separately. Demo completion grants no real rider service access.</p>
   </section>;
 }

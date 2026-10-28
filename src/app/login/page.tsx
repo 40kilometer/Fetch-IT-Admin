@@ -2,7 +2,10 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PASSWORD_REQUIREMENT } from "@/lib/staff-password-policy";
+import { useLocalDemo } from '@/hooks/use-local-demo';
 export default function LoginPage() {
+  const lab = useLocalDemo();
+  const [demoActor, setDemoActor] = useState('reviewer');
   const router = useRouter();
   const pending = useRef(false);
   const [email, setEmail] = useState("");
@@ -14,6 +17,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  async function demoLogin() {
+    if (pending.current) return;
+    pending.current = true; setLoading(true); setError('');
+    try {
+      const response = await fetch('/api/local-demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actor: demoActor }) });
+      const data = await response.json(); if (!response.ok) throw Error(data.error || 'Demo sign-in failed.');
+      router.push('/dashboard/applications'); router.refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Demo sign-in failed.'); } finally { pending.current = false; setLoading(false); }
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault(); if (pending.current) return;
     pending.current = true; setLoading(true); setError(""); setNotice("");
@@ -31,6 +43,7 @@ export default function LoginPage() {
   return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
     <form onSubmit={submit} className="card" style={{ width: "100%", maxWidth: 400, padding: 32 }} aria-busy={loading}>
       <h1 style={{ fontSize: 22 }}>Fetch Staff Portal</h1>
+      {lab.enabled && <aside className="card" style={{ padding: 16, margin: '18px 0', borderColor: '#bf702f' }}><strong>LOCAL DEMO LAB</strong><p className="small">Connected to the isolated Rider test database. No production accounts or real emails.</p><label>Demo staff account<select value={demoActor} onChange={e => setDemoActor(e.target.value)}><option value="reviewer">Review Admin</option><option value="approver">Orientation Admin</option><option value="activator">Activation Admin</option><option value="safety">Safety Reviewer</option></select></label><button className="btn primary" type="button" disabled={loading} onClick={() => void demoLogin()}>Use demo staff</button></aside>}
       <p className="muted small">{mode === "login" ? "Staff sign-in only." : mode === "send" ? "Recover your staff password." : "Enter the 6-digit code sent to your email. It expires in 10 minutes."}</p>
       <label htmlFor="email">Email</label><input id="email" className="input" type="email" autoComplete="username" required value={email} disabled={loading || mode === "reset"} onChange={event => setEmail(event.target.value)} style={{ marginBottom: 16 }} />
       {mode === "reset" && <><label htmlFor="code">Email code</label><input id="code" className="input" inputMode="numeric" autoComplete="one-time-code" required pattern="[0-9]{6}" maxLength={6} value={code} disabled={loading} onChange={event => setCode(event.target.value)} style={{ marginBottom: 16 }} /></>}
