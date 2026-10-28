@@ -33,7 +33,7 @@ function fixture() {
     vm.runInNewContext(code, { exports, Buffer, Date, setTimeout, clearTimeout, process: { env: { NODE_ENV: "production", ADMIN_SESSION_SECRET: "fixture-" + "a".repeat(64) } }, console: { info() {}, error: (...args) => logs.push(args) }, require: name => {
       if (name === "@/lib/db" || name === "./db") return { db };
       if (name === "./push-delivery") return { schedulePushDelivery() {} };
-      if (name === "next/headers") return { cookies: async () => ({ set: (key, value) => cookies.set(key, value) }) };
+      if (name === "next/headers") return { cookies: async () => ({ get: key => cookies.has(key) ? { value: cookies.get(key) } : undefined, set: (key, value) => cookies.set(key, value), delete: key => cookies.delete(key) }) };
       if (name.startsWith("@/")) return load("src/" + name.slice(2) + ".ts");
       if (name.startsWith(".")) return load(path.relative(root, path.resolve(path.dirname(filename), name + ".ts")));
       return require(name);

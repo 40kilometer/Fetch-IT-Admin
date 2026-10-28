@@ -16,6 +16,7 @@ export interface AdminSessionPayload {
   name: string;
   iat?: number;
   exp: number;
+  demo?: { uid: string; sid: string };
 }
 
 function b64encode(obj: unknown): string {
@@ -32,12 +33,12 @@ function sign(payloadStr: string): string {
   return crypto.createHmac("sha256", sessionSecret("ADMIN_SESSION_SECRET")).update(payloadStr).digest("base64url");
 }
 
-export function createAdminSessionToken(payload: Omit<AdminSessionPayload, "exp">): string {
+export function createAdminSessionToken(payload: Omit<AdminSessionPayload, "exp">, expiresAt = Date.now() + 1000 * 60 * 60 * 8): string {
   const fullPayload: AdminSessionPayload = {
     ...payload,
     sid: crypto.randomUUID(),
     iat: Date.now(),
-    exp: Date.now() + 1000 * 60 * 60 * 8, // 8 hours — shorter-lived than customer/rider sessions
+    exp: Math.min(expiresAt, Date.now() + 1000 * 60 * 60 * 8),
   };
   const payloadStr = b64encode(fullPayload);
   return `${payloadStr}.${sign(payloadStr)}`;
@@ -53,6 +54,7 @@ export function verifyAdminSessionToken(token: string): AdminSessionPayload | nu
   if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) return null;
   const payload = b64decode<AdminSessionPayload>(payloadStr);
   if (!payload || typeof payload.uid !== "string" || !payload.uid || typeof payload.email !== "string" || typeof payload.name !== "string" || !Number.isFinite(payload.exp) || payload.exp < Date.now() || (payload.iat !== undefined && (!Number.isFinite(payload.iat) || payload.iat > Date.now()))) return null;
+  if (payload.demo && (typeof payload.demo.uid !== "string" || !payload.demo.uid || typeof payload.demo.sid !== "string" || !payload.demo.sid)) return null;
   return payload;
 }
 
@@ -70,7 +72,7 @@ export async function setAdminSessionCookie(token: string): Promise<void> {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 8,
+    maxAge: Math.max(0, Math.min(60 * 60 * 8, Math.floor(((verifyAdminSessionToken(token)?.exp ?? 0) - Date.now()) / 1000))),
   });
 }
 

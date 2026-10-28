@@ -2,9 +2,10 @@ import { withRequestLog, RateLimitError, limitLogin, safeErrorCode } from "@/lib
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
-import { createAdminSessionToken, setAdminSessionCookie, verifyAdminSessionToken } from "@/lib/session";
+import { createAdminSessionToken, getAdminSession, setAdminSessionCookie, verifyAdminSessionToken } from "@/lib/session";
 import { isStaffRole } from "@/lib/staff-policy";
 import {assertRuntimeAccess} from '@/lib/runtime-access';
+import { clearDemoCookie, revokeDemoSessions } from "@/lib/staff-demo";
 
 async function handlePOST(req: NextRequest) {
   let stage = "request";
@@ -28,6 +29,7 @@ async function handlePOST(req: NextRequest) {
         return null;
       }
       await tx.adminAudit.create({ data: { actorId: user.id, actorName: user.name, action: "LOGIN_SUCCEEDED", entityType: "AUTH", entityId: user.id, details: { result: "Signed in" } } });
+      await revokeDemoSessions(tx, await getAdminSession());
       const token=createAdminSessionToken({ uid:user.id,email:user.email,name:user.name });
       const payload=verifyAdminSessionToken(token)!;
       await tx.staffSession.create({data:{id:payload.sid!,userId:user.id,expiresAt:new Date(payload.exp)}});
@@ -36,6 +38,7 @@ async function handlePOST(req: NextRequest) {
     if (!result) return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
     const { user, token } = result;
     stage = "session-cookie";
+    await clearDemoCookie();
     await setAdminSessionCookie(token);
 
     return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } });
