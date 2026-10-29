@@ -1,0 +1,138 @@
+// User-requested fictional work history. This module performs no I/O.
+const { createHash } = require('node:crypto');
+const BATCH = 'team_activity_20261029_v1';
+const MINUTE = 60000, DAY = 86400000;
+const STOPS = [
+  ['Lingayen Public Market', 16.0220, 120.2308], ['Pangasinan Provincial Capitol', 16.0339, 120.2319],
+  ['Binmaley Town Plaza', 16.0309, 120.2691], ['Dagupan City Plaza', 16.0434, 120.3340],
+  ['Labrador Municipal Hall', 16.0250, 120.1450], ['San Carlos Public Market', 15.9281, 120.3482],
+];
+const APPLICANTS = [
+  ['alvin', 'Alvin Ramos', 'MOTORCYCLE', ['DELIVERY'], 'SUBMITTED', 'Honda', 'Click 125i'],
+  ['bea', 'Beatrice Flores', 'SEDAN', ['RIDE'], 'SUBMITTED', 'Toyota', 'Vios'],
+  ['carlos', 'Carlos Navarro', 'TRICYCLE', ['DELIVERY'], 'SUBMITTED', 'TVS', 'King'],
+  ['diana', 'Diana Salazar', 'MOTORCYCLE', ['DELIVERY', 'RIDE'], 'IN_REVIEW', 'Yamaha', 'Mio Gear'],
+  ['edwin', 'Edwin Castillo', 'TRICYCLE', ['RIDE'], 'IN_REVIEW', 'Bajaj', 'RE'],
+  ['faith', 'Faith Mendoza', 'SEDAN', ['DELIVERY', 'RIDE'], 'IN_REVIEW', 'Mitsubishi', 'Mirage G4'],
+  ['gilbert', 'Gilbert Aquino', 'MOTORCYCLE', ['DELIVERY'], 'NEEDS_CORRECTION', 'Suzuki', 'Burgman Street'],
+  ['hazel', 'Hazel Fernandez', 'SEDAN', ['RIDE'], 'NEEDS_CORRECTION', 'Toyota', 'Wigo'],
+  ['ivan', 'Ivan Bautista', 'MOTORCYCLE', ['DELIVERY'], 'ORIENTATION_SCHEDULED', 'Honda', 'Beat'],
+  ['jessa', 'Jessa Villanueva', 'TRICYCLE', ['DELIVERY', 'RIDE'], 'ORIENTATION_SCHEDULED', 'TVS', 'King'],
+  ['kenneth', 'Kenneth De Leon', 'SEDAN', ['RIDE'], 'ASSESSED', 'Toyota', 'Avanza'],
+  ['lorena', 'Lorena Santiago', 'MOTORCYCLE', ['DELIVERY', 'RIDE'], 'ASSESSED', 'Yamaha', 'NMAX'],
+];
+const ISSUES = [
+  ['BOOKING', 'Pickup instructions', 'Could you ask the rider to use the side entrance? The parcel is with our guard.', 'I have added the pickup instructions to this conversation. Please keep your phone available for the rider.'],
+  ['FARE', 'Payment confirmation', 'The online payment shows as paid, but I would like a copy of the reference for my records.', 'I located the payment reference and routed it to Finance for a record check. Please avoid paying a second time.'],
+  ['RIDER', 'Package handling concern', 'The carton arrived with a dent on one corner. The contents appear intact, but I want the handling checked.', 'Thank you for reporting it. Please retain the packaging and attach a photo so Safety can review the handling.'],
+  ['LOST_ITEM', 'Item left after a ride', 'I may have left a blue umbrella in the vehicle after my trip. Could you help me check?', 'I have opened an item trace with the trip details. We will update this conversation when the rider responds.'],
+  ['BOOKING', 'Delivery status clarification', 'My delivery was completed, but the recipient would like to confirm where the envelope was handed over.', 'I am checking the completion record and handover instructions. I will post the verified details here.'],
+  ['FARE', 'Duplicate authorization query', 'I can see two pending entries for the same booking. Can you check whether this is a duplicate authorization?', 'Finance will compare the booking reference and authorization entries. No refund has been issued while that review is pending.'],
+  ['OTHER', 'Receipt request', 'Could you help me get the booking reference and fare breakdown for our office expense record?', 'The booking reference and quoted fare are available in your booking details. I have recorded your receipt request for follow-up.'],
+];
+const CASE_TITLES = {
+  FINANCE: ['Authorization reference mismatch', 'Fare breakdown clarification', 'Duplicate authorization review', 'Receipt reference reconciliation', 'Refund record follow-up', 'Payment confirmation review'],
+  SAFETY: ['Parcel packaging concern', 'Pickup handover review', 'Lost-item trace', 'Vehicle condition follow-up', 'Delivery handling review', 'Passenger pickup feedback'],
+  ESCALATION: ['Repeated delivery-status follow-up', 'Customer callback coordination', 'Receipt request handover', 'Priority conversation review', 'Pickup instruction follow-up', 'Customer resolution check'],
+};
+function buildPlan({ customers, staff, now, quoteFare, quoteRideFare, settings, requiredDocuments }) {
+  if (customers.length !== 24 || new Set(customers.map(c => c.id)).size !== 24) throw Error('Expected 24 distinct existing generated customers.');
+  const byRole = Object.fromEntries(staff.map(s => [s.role, s]));
+  for (const role of ['ADMIN', 'SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) if (!byRole[role] || byRole[role].isBanned) throw Error('Missing active staff role: ' + role);
+  if (!Number.isFinite(now.getTime())) throw Error('Invalid activity time.');
+  const actorTime = (actor, date, sequence = 0) => new Date(Math.max(new Date(date).getTime(), actor.createdAt ? new Date(actor.createdAt).getTime() + (10 + sequence) * MINUTE : 0));
+  const at = minutes => new Date(now.getTime() + minutes * MINUTE);
+  const phDate = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10), midnight = Date.parse(phDate + 'T00:00:00+08:00');
+  const users = [], profiles = [], presence = [], bookings = [], bookingEvents = [], paymentEvents = [], audits = [], tickets = [], messages = [], internalNotes = [], cases = [], workflowNotes = [], applications = [], applicationEvents = [], documents = [], resources = [];
+  function audit(actor, action, entityType, entityId, details, createdAt) {
+    audits.push({ id: `${BATCH}_audit_${audits.length + 1}`, actorId: actor.id, actorName: actor.name, action, entityType, entityId, details: { ...details, synthetic: true, source: 'User-requested fictional team activity', batch: BATCH }, createdAt: actorTime(actor, createdAt, audits.length) });
+  }
+  const fleet = ['MOTORCYCLE', 'TRICYCLE', 'SEDAN'].map((vehicleClass, index) => {
+    const user = { id: `${BATCH}_courier_${index}`, name: ['Ruben Aguilar', 'Noel Torres', 'Ramon Mercado'][index], email: `courier-${index + 1}@activity.fetchit.invalid`, role: 'RIDER', createdAt: new Date(midnight - 20 * DAY), updatedAt: now };
+    users.push(user); profiles.push({ userId: user.id, vehicleClass, vehiclePlate: `REF-${310 + index}`, totalDeliveries: 0, rating: 5 }); presence.push({ userId: user.id, isOnline: false }); return { ...user, vehicleClass };
+  });
+  for (let index = 0; index < 72; index++) {
+    const customer = customers[index % 24], rider = fleet[(Math.floor(index / 3) + index) % 3], pickup = STOPS[index % STOPS.length], dropoff = STOPS[(index + 1 + Math.floor(index / 6) % 4) % STOPS.length];
+    const recent = index < 12, proposed = recent ? at(-210 - index * 4).getTime() : midnight - (1 + index % 13) * DAY + (8 + index % 10) * 3600000;
+    const createdAt = new Date(Math.max(new Date(customer.createdAt).getTime() + 3600000, proposed));
+    const cancelled = index % 6 === Math.floor(index / 24), type = index % 3 === 1 ? 'RIDE' : 'DELIVERY', cargoWeightKg = type === 'RIDE' ? 0 : 1 + index % 8;
+    const quote = (type === 'RIDE' ? quoteRideFare : quoteFare)({ pickup: { lat: pickup[1], lng: pickup[2] }, dropoff: { lat: dropoff[1], lng: dropoff[2] }, vehicleClass: rider.vehicleClass, cargoWeightKg, when: createdAt, settings });
+    const matchedAt = new Date(createdAt.getTime() + 2 * MINUTE), pickedUpAt = cancelled ? null : new Date(createdAt.getTime() + 7 * MINUTE);
+    const deliveredAt = cancelled ? null : new Date(pickedUpAt.getTime() + Math.max(10, quote.etaMinutes) * MINUTE), cancelledAt = cancelled ? new Date(createdAt.getTime() + 5 * MINUTE) : null, end = deliveredAt || cancelledAt;
+    if (end > now) throw Error('A generated historical booking would finish in the future.');
+    const id = `${BATCH}_booking_${String(index + 1).padStart(3, '0')}`, refCode = `${type === 'RIDE' ? 'RIDE' : 'FIT'}-${createHash('sha256').update(id).digest('hex').slice(0, 5).toUpperCase()}`;
+    const online = Math.floor(index / 24) === 1, paymentStatus = online ? cancelled ? 'REFUNDED' : 'PAID' : 'UNPAID', fare = Number(quote.fare.totalFare), commission = Math.round(fare * 10) / 100;
+    bookings.push({ id, refCode, type, customerId: customer.id, riderId: rider.id, pickupLabel: pickup[0], pickupLat: pickup[1], pickupLng: pickup[2], dropoffLabel: dropoff[0], dropoffLat: dropoff[1], dropoffLng: dropoff[2], vehicleClass: rider.vehicleClass, cargoWeightKg, passengers: type === 'RIDE' ? 1 : 1, cargoNotes: type === 'RIDE' ? 'Pickup at the designated waiting area.' : ['Sealed office documents', 'Packed groceries', 'School supplies', 'Boxed household items'][index % 4], distanceKm: quote.distanceKm, baseFare: quote.fare.baseFare, totalFare: fare, surgeMultiplier: quote.surgeMultiplier, etaMinutes: quote.etaMinutes, status: cancelled ? 'CANCELLED' : 'DELIVERED', matchedAt, pickedUpAt, deliveredAt, cancelledAt, cancellationReason: cancelled ? 'Customer requested a later pickup; this booking was closed.' : null, paymentMethod: online ? ['DEMO_GCASH', 'DEMO_MAYA', 'DEMO_BANK'][Math.floor(index / 3) % 3] : 'CASH', paymentStatus, ...(online ? { paymentReference: `REC-${phDate.replaceAll('-', '')}-${index + 1}`, paidAt: matchedAt, demoCommissionBps: 1000, demoCommission: cancelled ? 0 : commission, demoRiderEarnings: cancelled ? 0 : Math.round((fare - commission) * 100) / 100 } : {}), createdAt, updatedAt: end });
+    const steps = [['CREATED', null, 'PENDING', createdAt, customer], ['ASSIGNED', 'PENDING', 'MATCHED', matchedAt, byRole.ADMIN], ...(cancelled ? [['CANCELLED', 'MATCHED', 'CANCELLED', cancelledAt, customer]] : [['STATUS_CHANGED', 'MATCHED', 'ACCEPTED', new Date(matchedAt.getTime() + MINUTE), rider], ['STATUS_CHANGED', 'ACCEPTED', 'PICKED_UP', pickedUpAt, rider], ['STATUS_CHANGED', 'PICKED_UP', 'IN_TRANSIT', new Date(pickedUpAt.getTime() + MINUTE), rider], ['STATUS_CHANGED', 'IN_TRANSIT', 'DELIVERED', deliveredAt, rider]])];
+    for (const [action, fromStatus, toStatus, created, actor] of steps) bookingEvents.push({ id: `${id}_event_${bookingEvents.length}`, bookingId: id, actorId: actor.id, actorName: actor.name, actorRole: actor.role, action, fromStatus, toStatus, riderId: rider.id, reason: `Generated work-history scenario (${BATCH}).`, createdAt: created });
+    if (!cancelled) profiles.find(profile => profile.userId === rider.id).totalDeliveries++;
+    if (online) {
+      paymentEvents.push({ id: `${id}_payment`, bookingId: id, actorId: byRole.FINANCE.id, actorName: byRole.FINANCE.name, actorRole: 'FINANCE', action: 'PAYMENT_UPDATED', amount: fare, fromStatus: 'UNPAID', toStatus: 'PAID', reason: `Reference reconciled in generated work history (${BATCH}); no funds transferred.`, reference: `REC-${index + 1}`, createdAt: actorTime(byRole.FINANCE, matchedAt, paymentEvents.length) });
+      audit(byRole.FINANCE, 'PAYMENT_UPDATED', 'BOOKING', id, { from: 'UNPAID', to: 'PAID', reference: `REC-${index + 1}` }, matchedAt);
+      if (cancelled) { paymentEvents.push({ ...paymentEvents.at(-1), id: `${id}_refund`, fromStatus: 'PAID', toStatus: 'REFUNDED', createdAt: actorTime(byRole.FINANCE, end, paymentEvents.length) }); audit(byRole.FINANCE, 'PAYMENT_UPDATED', 'BOOKING', id, { from: 'PAID', to: 'REFUNDED', reference: `REC-${index + 1}` }, end); }
+      bookings.at(-1).updatedAt = new Date(Math.max(end.getTime(), ...paymentEvents.filter(event => event.bookingId === id).map(event => event.createdAt.getTime())));
+    }
+    if (index < 12) audit(byRole.ADMIN, 'BOOKING_REVIEWED', 'BOOKING', id, { status: bookings.at(-1).status, note: 'Completion timeline checked; no open operational intervention.' }, new Date(end.getTime() + MINUTE));
+  }
+  for (let index = 0; index < 28; index++) {
+    const customer = customers[index % 24];
+    const options = bookings.filter(booking => booking.customerId === customer.id && booking.status === 'DELIVERED' && booking.createdAt < new Date(midnight));
+    const booking = options.find(booking => booking.paymentMethod !== 'CASH') ?? options.at(-1);
+    if (!booking) throw Error('Missing completed booking for generated customer conversation.');
+    const issue = ISSUES[index % ISSUES.length][0] === 'FARE' && booking.paymentMethod === 'CASH' ? ISSUES[6] : ISSUES[index % ISSUES.length];
+    const base = Math.max(new Date(booking.updatedAt).getTime() + 10 * MINUTE, now.getTime() - (2 + index % 6 * 5) * 3600000), createdAt = new Date(base);
+    const status = index < 8 ? 'OPEN' : index < 20 ? 'IN_PROGRESS' : 'RESOLVED', actor = index % 4 === 0 ? byRole.SUPPORT_SUPERVISOR : byRole.SUPPORT, assignedAdminId = index < 4 ? null : actor.id;
+    const id = `${BATCH}_ticket_${index + 1}`, thread = [{ id: `${id}_message_1`, ticketId: id, authorId: customer.id, authorName: customer.name, authorRole: 'CUSTOMER', body: issue[2], createdAt }];
+    if (index >= 8) thread.push({ id: `${id}_message_2`, ticketId: id, authorId: actor.id, authorName: actor.name, authorRole: actor.role, body: issue[3], createdAt: new Date(base + 12 * MINUTE) });
+    if (status === 'IN_PROGRESS' && index % 2 === 0) thread.push({ id: `${id}_message_3`, ticketId: id, authorId: customer.id, authorName: customer.name, authorRole: 'CUSTOMER', body: 'Thank you. I have added the details you requested and will wait for the next update here.', createdAt: new Date(base + 23 * MINUTE) });
+    if (status === 'RESOLVED') thread.push({ id: `${id}_message_3`, ticketId: id, authorId: customer.id, authorName: customer.name, authorRole: 'CUSTOMER', body: 'That answers my question. Thank you for following up and keeping the reference in this conversation.', createdAt: new Date(base + 23 * MINUTE) }, { id: `${id}_message_4`, ticketId: id, authorId: actor.id, authorName: actor.name, authorRole: actor.role, body: 'You are welcome. I have marked this request resolved. You can reply here if you need anything else about this booking.', createdAt: new Date(base + 29 * MINUTE) });
+    messages.push(...thread);
+    tickets.push({ id, customerId: customer.id, bookingId: booking.id, category: issue[0], message: issue[2], status, priority: index % 7 === 2 ? 'HIGH' : index % 9 === 0 ? 'LOW' : 'NORMAL', assignedAdminId, createdAt, updatedAt: thread.at(-1).createdAt, lastCustomerMessageAt: thread.filter(m => m.authorRole === 'CUSTOMER').at(-1).createdAt, lastAdminReplyAt: thread.filter(m => m.authorRole !== 'CUSTOMER').at(-1)?.createdAt ?? null });
+    if (assignedAdminId) {
+      internalNotes.push({ id: `${id}_note`, ticketId: id, authorId: actor.id, authorName: actor.name, body: status === 'RESOLVED' ? 'Customer acknowledged the answer. No additional operational action is outstanding.' : index % 3 === 0 ? 'Coordinate the next update with the assigned review team. Keep the customer informed in this thread.' : 'Booking reference matched to the account. Keep any payment correction in a separate Finance review.', createdAt: new Date(base + 32 * MINUTE) });
+      audit(actor, 'SUPPORT_NOTE_ADDED', 'SUPPORT', id, { note: internalNotes.at(-1).body }, new Date(base + 32 * MINUTE));
+      audit(actor, 'SUPPORT_UPDATED', 'SUPPORT', id, { status, priority: tickets.at(-1).priority, assignedAdminId, replyAdded: index >= 8 }, new Date(base + 32 * MINUTE));
+    }
+  }
+  for (const [kindIndex, kind] of ['FINANCE', 'SAFETY', 'ESCALATION'].entries()) for (let index = 0; index < 6; index++) {
+    const eligible = tickets.filter(ticket => kind === 'FINANCE' ? ticket.category === 'FARE' : kind === 'SAFETY' ? ['RIDER', 'LOST_ITEM'].includes(ticket.category) : !['FARE', 'RIDER', 'LOST_ITEM'].includes(ticket.category));
+    const ticket = eligible[index]; if (!ticket) throw Error('Missing linked conversation for ' + kind);
+    const assigned = byRole[kind === 'ESCALATION' ? 'SUPPORT_SUPERVISOR' : kind], status = ['OPEN', 'IN_REVIEW', 'AWAITING_ADMIN', 'AWAITING_ADMIN', 'APPROVED', 'RESOLVED'][index];
+    const creator = ticket.assignedAdminId === byRole.SUPPORT_SUPERVISOR.id ? byRole.SUPPORT_SUPERVISOR : byRole.SUPPORT;
+    const id = `${BATCH}_case_${kind.toLowerCase()}_${index + 1}`, base = new Date(ticket.createdAt).getTime() + 40 * MINUTE, createdAt = new Date(base), recommended = ['AWAITING_ADMIN', 'APPROVED', 'RESOLVED'].includes(status);
+    const recommendation = kind === 'FINANCE' ? 'Retain the booking reference, verify the recorded authorization, and correct the accounting reference only after the discrepancy is confirmed. No transfer is requested.' : kind === 'SAFETY' ? 'Preserve the supplied evidence and arrange a focused rider follow-up. No account restriction is requested without additional verified evidence.' : 'Send a consolidated update to the customer, retain the linked conversation, and confirm the resolution before closing the review.';
+    cases.push({ id, kind, title: CASE_TITLES[kind][index], summary: `${ticket.message}\nLinked conversation and booking reference are available for cross-checking. Record findings before any operational intervention.`, priority: index === 2 ? 'HIGH' : 'NORMAL', status, bookingId: ticket.bookingId, ticketId: ticket.id, subjectUserId: ticket.customerId, assignedToId: index === 0 ? null : assigned.id, createdById: creator.id, createdByName: creator.name, recommendation: recommended ? recommendation : null, ...(['APPROVED', 'RESOLVED'].includes(status) ? { decision: 'Proceed with the documented follow-up. Any financial or account action requires separate evidence and a recorded operational action.', decidedById: byRole.ADMIN.id, decidedAt: new Date(base + 60 * MINUTE) } : {}), version: 1 + (index > 0 ? 1 : 0) + (recommended ? 1 : 0) + (['APPROVED', 'RESOLVED'].includes(status) ? 1 : 0) + (status === 'RESOLVED' ? 1 : 0), createdAt, updatedAt: new Date(base + (status === 'RESOLVED' ? 70 : recommended ? 60 : index > 0 ? 15 : 0) * MINUTE) });
+    audit(creator, 'CASE_CREATED', 'CASE', id, { kind, ticketId: ticket.id }, createdAt);
+    if (index > 0) { workflowNotes.push({ id: `${id}_evidence`, caseId: id, authorId: assigned.id, authorName: assigned.name, body: 'Matched the conversation to the booking and reviewed the available timeline. No customer credentials or payment details are needed for this review.', createdAt: new Date(base + 15 * MINUTE) }); audit(assigned, 'CASE_CLAIM', 'CASE', id, { from: 'OPEN', to: 'IN_REVIEW', assignedToId: assigned.id }, new Date(base + 10 * MINUTE)); }
+    if (index > 0) audit(assigned, 'CASE_NOTE', 'CASE', id, { note: workflowNotes.at(-1).body }, new Date(base + 15 * MINUTE));
+    if (recommended) audit(assigned, 'CASE_RECOMMEND', 'CASE', id, { from: 'IN_REVIEW', to: 'AWAITING_ADMIN', recommendation }, new Date(base + 35 * MINUTE));
+    if (['APPROVED', 'RESOLVED'].includes(status)) audit(byRole.ADMIN, 'CASE_DECIDE', 'CASE', id, { from: 'AWAITING_ADMIN', to: 'APPROVED', reason: cases.at(-1).decision }, new Date(base + 60 * MINUTE));
+    if (status === 'RESOLVED') { workflowNotes.push({ id: `${id}_resolution`, caseId: id, authorId: byRole.ADMIN.id, authorName: byRole.ADMIN.name, body: 'Resolution: Reviewed the evidence and retained the supporting references. The requested clarification is complete; no transfer or account restriction was applied.', createdAt: new Date(base + 70 * MINUTE) }); audit(byRole.ADMIN, 'CASE_CLOSE', 'CASE', id, { from: 'APPROVED', to: 'RESOLVED' }, new Date(base + 70 * MINUTE)); }
+  }
+  for (const [index, [key, name, vehicleClass, services, status, make, model]] of APPLICANTS.entries()) {
+    const userId = `${BATCH}_applicant_${key}`, id = `${BATCH}_application_${key}`, createdAt = status === 'ASSESSED' ? at(-3 * 1440 - index * 17) : status === 'ORIENTATION_SCHEDULED' ? at(-2 * 1440 - index * 17) : at(-90 - index * 45), submittedAt = new Date(createdAt.getTime() + 35 * MINUTE), assigned = status !== 'SUBMITTED';
+    const fields = { legalName: name, birthDate: `${1988 + index % 10}-0${1 + index % 9}-12`, address: `${['Poblacion', 'Maniboc', 'Libsong', 'Bantayan'][index % 4]}, ${index % 2 ? 'Binmaley' : 'Lingayen'}, Pangasinan`, mobile: `09000000${101 + index}`, emergencyName: `${['Marissa', 'Renato', 'Celia'][index % 3]} ${name.split(' ').at(-1)}`, emergencyRelationship: index % 2 ? 'Sibling' : 'Spouse', emergencyPhone: `09000000${201 + index}`, licenceNumber: `REF-LIC-${601 + index}`, licenceCodes: vehicleClass === 'MOTORCYCLE' ? 'A' : vehicleClass === 'TRICYCLE' ? 'A1' : 'B', licenceExpiry: '2029-10-31', nbiExpiry: '2027-10-31', vehicleMake: make, vehicleModel: model, vehicleYear: String(2021 + index % 5), plateNumber: `REF-${510 + index}`, registrationExpiry: '2027-09-30', capacity: services.includes('RIDE') ? vehicleClass === 'SEDAN' ? '4' : vehicleClass === 'TRICYCLE' ? '2' : '1' : '12', displacement: vehicleClass === 'SEDAN' ? '' : vehicleClass === 'TRICYCLE' ? '200' : '125', ownership: index === 7 ? 'BORROWED' : 'OWNER', operatingArea: 'Lingayen and Binmaley, Pangasinan', permitNumber: vehicleClass !== 'MOTORCYCLE' && services.includes('RIDE') ? `REF-PERMIT-${801 + index}` : '', activityBatch: BATCH, synthetic: true };
+    const progressed = ['ORIENTATION_SCHEDULED', 'ASSESSED'].includes(status), correction = status === 'NEEDS_CORRECTION', fieldReviews = Object.fromEntries(['personal', 'emergency', 'licence', 'vehicle', 'ownership', 'service'].map((section, sectionIndex) => [section, { status: progressed || correction && section !== 'vehicle' || status === 'IN_REVIEW' && sectionIndex < index - 2 ? 'ACCEPTED' : correction && section === 'vehicle' ? 'NEEDS_CORRECTION' : 'PENDING', ...(correction && section === 'vehicle' ? { reason: 'Please upload a readable registration copy showing the plate number and current validity date.' } : {}), ...(assigned ? { reviewerId: byRole.SAFETY.id } : {}) }]));
+    users.push({ id: userId, name, email: `${key}@applicants.fetchit.invalid`, phone: fields.mobile, role: 'RIDER', createdAt, updatedAt: now }); profiles.push({ userId, vehicleClass, vehiclePlate: fields.plateNumber, totalDeliveries: 0, rating: 5 }); presence.push({ userId, isOnline: false });
+    const orientationAt = status === 'ASSESSED' ? new Date(midnight - DAY + 9 * 3600000) : new Date(midnight + DAY + (9 + index % 2) * 3600000);
+    applications.push({ id, userId, isDemo: true, status, vehicleClass, services, fields, fieldReviews, assignedToId: assigned ? byRole.SAFETY.id : null, submittedAt, createdAt, updatedAt: at(-25 - index * 5), version: progressed ? 5 : assigned ? 3 : 1, ...(progressed ? { orientationAt, orientationVenue: 'Rider training room, Lingayen operations office', orientationInstructions: 'Bring the original copies of your submitted documents and the vehicle listed in your application. Arrive 15 minutes before the schedule.' } : {}), ...(status === 'ASSESSED' ? { attendedAt: new Date(orientationAt.getTime() + 5 * MINUTE), assessmentPassedAt: index === 10 ? new Date(orientationAt.getTime() + 50 * MINUTE) : null, assessedById: byRole.SAFETY.id, assessmentNotes: index === 10 ? 'Orientation attendance and route-safety exercise recorded. Vehicle checklist completed; service decision remains outstanding.' : 'Orientation attended. Secure cargo restraint and demonstrate the loading checklist again before a successful result is recorded.' } : {}) });
+    function event(actor, action, details, date) { applicationEvents.push({ id: `${id}_event_${applicationEvents.length}`, applicationId: id, actorId: actor.id, actorName: actor.name, action, details: { ...details, synthetic: true, batch: BATCH, source: 'User-requested fictional application history' }, createdAt: actorTime(actor, date, applicationEvents.length) }); if (actor.role !== 'RIDER') audit(actor, `APPLICATION_${action}`, 'RIDER_APPLICATION', id, details, date); }
+    event(users.at(-1), 'SUBMIT', { vehicleClass, services }, submittedAt);
+    if (assigned) event(byRole.SAFETY, 'CLAIM', { assignedToId: byRole.SAFETY.id }, new Date(submittedAt.getTime() + 15 * MINUTE));
+    if (status !== 'SUBMITTED') event(byRole.SAFETY, 'REVIEW', { status: correction ? 'NEEDS_CORRECTION' : progressed ? 'ACCEPTED' : 'IN_REVIEW', reason: correction ? 'Registration image needs replacement before orientation.' : 'Checklist review recorded; supporting references retained.' }, new Date(submittedAt.getTime() + 45 * MINUTE));
+    if (correction) event(byRole.SAFETY, 'CORRECTIONS', { reason: 'Replace the unreadable registration image. Accepted items remain on file.' }, new Date(submittedAt.getTime() + 55 * MINUTE));
+    if (progressed) event(byRole.SAFETY, 'SCHEDULE', { orientationAt: orientationAt.toISOString(), venue: applications.at(-1).orientationVenue, notificationSent: false }, new Date(submittedAt.getTime() + 60 * MINUTE));
+    if (status === 'ASSESSED') event(byRole.SAFETY, 'ASSESSMENT', { attended: true, passed: index === 10, notes: applications.at(-1).assessmentNotes }, new Date(orientationAt.getTime() + 55 * MINUTE));
+    applications.at(-1).updatedAt = applicationEvents.filter(event => event.applicationId === id).at(-1).createdAt;
+    for (const kind of requiredDocuments(vehicleClass, services, fields)) documents.push({ id: `${id}_${kind}`, applicationId: id, kind, version: 1, current: true, originalName: `${name.replaceAll(' ', '_')}_${kind.toLowerCase()}.${kind === 'PROFILE' ? 'jpg' : 'pdf'}`, status: correction && kind === 'OR' ? 'NEEDS_CORRECTION' : progressed || correction || status === 'IN_REVIEW' && ['PROFILE', 'LICENCE_FRONT'].includes(kind) ? 'ACCEPTED' : 'PENDING', ...(correction && kind === 'OR' ? { reason: 'Registration number is difficult to read. Upload a clearer copy including the document edges.' } : {}), ...((progressed || correction || status === 'IN_REVIEW' && ['PROFILE', 'LICENCE_FRONT'].includes(kind)) ? { reviewedById: byRole.SAFETY.id, reviewedAt: applicationEvents.find(event => event.applicationId === id && event.action === 'REVIEW').createdAt } : {}), createdAt: new Date(createdAt.getTime() + 20 * MINUTE) });
+  }
+  const recaps = [
+    ['KNOWLEDGE', 'Customer Support handover', 'Check unanswered conversations first, retain the booking reference, and keep the next promised update in the thread. Route payment discrepancies to Finance and handling concerns to Safety.'],
+    ['TEMPLATE', 'Payment reference follow-up', 'Thank you for the reference. We have linked it to your booking and routed it to Finance for review. Please avoid sending passwords, one-time codes, or complete account details. We will update this conversation once the record check is complete.'],
+    ['SAFETY_GUIDE', 'Orientation and assessment handover', 'Review the document checklist before scheduling orientation. Record attendance and assessment notes after the scheduled time. An incomplete assessment remains in review; force-approval requests need a reason and an Admin decision.'],
+    ['ANNOUNCEMENT', `Operations handover - ${phDate}`, `Handover coverage: 28 customer conversations and 18 linked team reviews. Rider onboarding: 12 applications across submission, document review, corrections, orientation, and assessment. Start with assigned work and pending Admin recommendations; preserve references in the audit history.`],
+  ];
+  recaps.forEach(([kind, title, body], index) => { const actor = index < 2 ? byRole.SUPPORT_SUPERVISOR : byRole.ADMIN, id = `${BATCH}_resource_${index}`; resources.push({ id, kind, title, body, version: 1, updatedById: actor.id, createdAt: at(-60 - index * 5), updatedAt: at(-60 - index * 5) }); audit(actor, 'RESOURCE_PUBLISHED', 'RESOURCE', id, { kind, title, team: index < 2 ? 'customer-support' : index === 2 ? 'safety' : null }, at(-60 - index * 5)); });
+  return { batch: BATCH, referenceTime: now, users, profiles, presence, bookings, bookingEvents, paymentEvents, tickets, messages, internalNotes, cases, workflowNotes, applications, applicationEvents, documents, resources, audits };
+}
+module.exports = { BATCH, APPLICANTS, buildPlan };
