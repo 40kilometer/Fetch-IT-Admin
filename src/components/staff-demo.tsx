@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { DEMO_ROLES, DEMO_STAFF_EMAILS } from "@/lib/staff-demo-roles";
 import { AdminIcon } from "./admin-icon";
+import { announceStaffSessionChange } from "@/lib/staff-session-sync";
 
 type Status = { unlocked: boolean; canStart: boolean; currentRole: string | null; expiresAt: string | null; controllerName: string | null; canUseAdmin: boolean; currentEmail: string | null };
 async function statusRequest(signal?: AbortSignal): Promise<Status> {
@@ -28,6 +29,7 @@ export function StaffAccountPicker() {
       const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not sign in. Please retry.");
+      announceStaffSessionChange();
       const next = await statusRequest(); setStatus(next);
       if (!next.canStart && !next.unlocked) throw new Error("Use a staff switching account or Admin to continue.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not open staff accounts."); }
@@ -44,6 +46,7 @@ export function StaffAccountPicker() {
         throw new Error(data.error || "Could not switch roles. Please retry.");
       }
       // Reload the entire portal so a previous role's cached navigation is gone.
+      announceStaffSessionChange();
       window.location.assign(data.redirect);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not switch roles."); pending.current = false; setBusy(""); }
   }
@@ -69,6 +72,7 @@ export function StaffSessionReturn() {
     try {
       const response = await fetch("/api/auth/demo", { method: "DELETE" }), data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not return to your original account.");
+      announceStaffSessionChange();
       window.location.assign(data.redirect);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Please retry."); pending.current = false; setBusy(false); }
   }

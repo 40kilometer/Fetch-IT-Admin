@@ -1,12 +1,11 @@
 "use client";
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { announceStaffSessionChange } from "@/lib/staff-session-sync";
 import { PASSWORD_REQUIREMENT } from "@/lib/staff-password-policy";
 import { useLocalDemo } from '@/hooks/use-local-demo';
 export default function LoginPage() {
   const lab = useLocalDemo();
   const [demoActor, setDemoActor] = useState('reviewer');
-  const router = useRouter();
   const pending = useRef(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +22,7 @@ export default function LoginPage() {
     try {
       const response = await fetch('/api/local-demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actor: demoActor }) });
       const data = await response.json(); if (!response.ok) throw Error(data.error || 'Demo sign-in failed.');
-      router.push('/dashboard/applications'); router.refresh();
+      announceStaffSessionChange(); window.location.assign('/dashboard/applications');
     } catch (e) { setError(e instanceof Error ? e.message : 'Demo sign-in failed.'); } finally { pending.current = false; setLoading(false); }
   }
   async function submit(event: React.FormEvent) {
@@ -34,7 +33,7 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/" + route, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, challengeId, code }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed. Please retry.");
-      if (mode === "login") { router.push("/dashboard"); router.refresh(); }
+      if (mode === "login") { announceStaffSessionChange(); window.location.assign("/dashboard"); }
       else if (mode === "send") { setChallengeId(data.challengeId); setMode("reset"); setPassword(""); setCode(""); setNotice(data.message); }
       else { setMode("login"); setPassword(""); setCode(""); setChallengeId(""); setNotice(data.message); }
     } catch (error) { setError(error instanceof Error ? error.message : "Service unavailable. Please retry."); }

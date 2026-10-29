@@ -9,6 +9,7 @@ import { hasPermission, ROLE_LABELS } from "@/lib/staff-policy";
 import { isStaffNavActive, staffNavigation, teamForRole, teamHome } from "@/lib/staff-teams";
 import { StaffSessionReturn } from "@/components/staff-demo";
 import { isDemoStaffAccount } from "@/lib/staff-demo-roles";
+import { watchStaffSession } from "@/lib/staff-session-sync";
 export function AdminShell({ admin, children }: { admin: { id: string; name: string; email: string; role: string; demo?: { controllerName: string; expiresAt: string } | null }; children: React.ReactNode }) {
   const pathname = usePathname(), search = useSearchParams(), router = useRouter(), sidebar = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false), [refreshing, startTransition] = useTransition();
@@ -18,6 +19,8 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
   const currentGroup = groups.find(group => group.links.some(link => active(link.href)));
   const currentLink = currentGroup?.links.find(link => active(link.href));
   const section = pathname === "/dashboard/account" ? "My account" : currentLink ? `${currentGroup?.team ? currentGroup.label + " / " : ""}${currentLink.label}` : "Staff portal";
+  const query = search.toString();
+  useEffect(() => watchStaffSession(admin, url => window.location.replace(url)), [admin.id, admin.role, pathname, query]);
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow;
