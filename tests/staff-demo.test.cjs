@@ -71,7 +71,7 @@ test('anonymous demo page stays locked and cannot mint a staff session', async (
 });
 
 test('ordinary staff cannot unlock demo access or elevate to Admin', async () => {
-  for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) {
+  for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY']) {
     const f = fixture(); f.users.get(role).email = "ordinary@fixture.invalid"; f.startAs(role);
     assert.equal((await f.demo.demoStatus()).canStart, false);
     assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
@@ -80,10 +80,10 @@ test('ordinary staff cannot unlock demo access or elevate to Admin', async () =>
 });
 
 test('designated real demo staff can unlock staff switching with their own account and can never switch into Admin', async () => {
-  for (const startingRole of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) {
+  for (const startingRole of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY']) {
     const f = fixture(); f.startAs(startingRole);
     const status = await f.demo.demoStatus(); assert.equal(status.canStart, true); assert.equal(status.canUseAdmin, false);
-    for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY']) {
+    for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY']) {
       assert.equal((await f.route.POST(f.request('POST', { role }))).status, 200);
       const user = await f.access.currentStaff(); assert.equal(user.id, role); assert.equal(user.email, f.users.get(role).email); assert.equal(user.name, role);
     }
@@ -103,7 +103,7 @@ test('demo access cannot bypass the production database permission check', async
 test('Admin unlocks every allowed role with sessions capped to the demo window', async () => {
   const f = fixture(), parent = f.startAs();
   assert.equal((await f.demo.demoStatus()).canStart, true);
-  for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'FINANCE', 'SAFETY', 'ADMIN']) {
+  for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY', 'ADMIN']) {
     const response = await f.route.POST(f.request('POST', { role, userId: 'OTHER_ADMIN' }));
     assert.equal(response.status, 200, role);
     const user = await f.access.currentStaff();
@@ -118,7 +118,7 @@ test('Admin unlocks every allowed role with sessions capped to the demo window',
     assert(f.options.get('fetchit_admin_session').maxAge <= 3600);
   }
   assert.equal([...f.sessions.values()].filter(row => !row.revokedAt).length, 2, 'Only the controller and latest demo session remain active');
-  assert.equal(f.audit.filter(event => event.action === 'DEMO_ROLE_SWITCHED').length, 5);
+  assert.equal(f.audit.filter(event => event.action === 'DEMO_ROLE_SWITCHED').length, 4);
   assert(f.audit.every(event => event.actorId === 'ADMIN'));
 });
 
@@ -131,7 +131,7 @@ test('staff permissions still apply inside an Admin-authorized demonstration', a
 });
 
 test('demo child cookies do not work without their controller grant', async () => {
-  const f = fixture(); f.startAs(); await f.demo.switchDemoRole('FINANCE');
+  const f = fixture(); f.startAs(); await f.demo.switchDemoRole('SAFETY');
   f.cookies.delete('fetchit_staff_demo');
   assert.equal(await f.access.currentStaff(), null);
   assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
@@ -168,10 +168,10 @@ test('tampered, expired, and mismatched controller grants fail closed', async ()
 test('missing, restricted, and reassigned demonstration accounts are not silently recreated', async () => {
   for (const change of ['delete', 'ban', 'role']) {
     const f = fixture(); f.startAs();
-    if (change === 'delete') f.users.delete('FINANCE');
-    if (change === 'ban') f.users.get('FINANCE').isBanned = true;
-    if (change === 'role') f.users.get('FINANCE').role = 'ADMIN';
-    assert.equal((await f.route.POST(f.request('POST', { role: 'FINANCE' }))).status, 409);
+    if (change === 'delete') f.users.delete('SAFETY');
+    if (change === 'ban') f.users.get('SAFETY').isBanned = true;
+    if (change === 'role') f.users.get('SAFETY').role = 'ADMIN';
+    assert.equal((await f.route.POST(f.request('POST', { role: 'SAFETY' }))).status, 409);
     assert.equal(f.sessions.size, 1); assert.equal(f.cookies.has('fetchit_staff_demo'), false);
   }
 });
@@ -187,7 +187,7 @@ test('unsupported roles, cross-origin requests, and missing origins cannot switc
 });
 
 test('finishing restores normal Admin access without extending its original expiry', async () => {
-  const f = fixture(), parent = f.startAs(); await f.demo.switchDemoRole('FINANCE');
+  const f = fixture(), parent = f.startAs(); await f.demo.switchDemoRole('SAFETY');
   const child = await f.session.getAdminSession(); f.advance(10 * 60_000);
   assert.equal((await f.route.DELETE(f.request('DELETE'))).status, 200);
   const restored = await f.session.getAdminSession();
@@ -224,4 +224,9 @@ test('a cleanup failure still clears both browser authentication cookies', async
   const logout = f.load('src/app/api/auth/logout/route.ts').POST;
   assert.equal((await logout(f.request('POST'))).status, 503);
   assert.equal(f.cookies.size, 0);
+});
+
+test('retired Finance demo identity cannot authenticate, present, or be switched into',async()=>{
+  const f=fixture();f.startAs('FINANCE');assert.equal(await f.access.currentStaff(),null);assert.equal((await f.demo.demoStatus()).canStart,false);
+  f.startAs();assert.equal((await f.route.POST(f.request('POST',{role:'FINANCE'}))).status,400);
 });

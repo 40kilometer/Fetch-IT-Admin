@@ -36,9 +36,10 @@ function fixture(role = "ADMIN", options = {}) {
       if (name === "@/lib/db" || name === "./db") return { db };
       if (name === "./session") return { getAdminSession: async () => ({ uid: staff.id, sid: "fixture-session", iat: Date.now() }) };
       if (name === "next/link") return { __esModule: true, default: ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children) };
+      if(name === "./staff-demo") return {getDemoController:async()=>null};
       if (name === "next/navigation") return {
         redirect: target => { throw new Error("redirect:" + target); }, notFound: () => { throw new Error("not-found"); },
-        usePathname: () => options.pathname ?? "/dashboard", useSearchParams: () => new URLSearchParams(options.search), useRouter: () => ({ refresh() {}, push() {} }),
+        usePathname: () => options.pathname ?? "/dashboard", useSearchParams: () => new URLSearchParams(options.search), useRouter: () => ({ refresh() {}, push() {},replace() {} }),
       };
       if (name.endsWith("action-form")) return { ActionForm: ({ label }) => React.createElement("button", null, label) };
       if (name.startsWith("@/") || name.startsWith(".")) {
@@ -53,7 +54,7 @@ function fixture(role = "ADMIN", options = {}) {
   return { staff, calls, load };
 }
 
-for (const [role, slug] of [["SUPPORT", "customer-support"], ["SUPPORT_SUPERVISOR", "customer-support"], ["FINANCE", "finance"], ["SAFETY", "safety"]]) {
+for (const [role, slug] of [["SUPPORT", "customer-support"], ["SUPPORT_SUPERVISOR", "customer-support"], ["SAFETY", "safety"]]) {
   test(`${role} sees only its team's tools and no Admin staff/audit links`, () => {
     const f = fixture(role, { pathname: `/dashboard/teams/${slug}` });
     const { staffNavigation } = f.load("src/lib/staff-teams.ts"), groups = staffNavigation(role);
@@ -70,8 +71,8 @@ for (const [role, slug] of [["SUPPORT", "customer-support"], ["SUPPORT_SUPERVISO
 
 test("Admin receives staff and audit pages inside every team section", () => {
   const f = fixture(), { staffNavigation } = f.load("src/lib/staff-teams.ts"), groups = staffNavigation("ADMIN");
-  assert.equal(groups.filter(group => group.team).length, 3);
-  for (const [slug, prefix] of [["customer-support", "CS"], ["finance", "Finance"], ["safety", "Safety"]]) {
+  assert.equal(groups.filter(group => group.team).length, 2);
+  for (const [slug, prefix] of [["customer-support", "CS"], ["safety", "Safety"]]) {
     const links = groups.find(group => group.team === slug).links;
     assert(links.some(link => link.label === prefix + " staff" && link.management));
     assert(links.some(link => link.label === prefix + " audit logs" && link.management));
@@ -88,15 +89,15 @@ test("supervisors retain support workload without gaining Admin management pages
 test("current-page matching distinguishes team reviews and nested management pages", () => {
   const { staffNavigation, isStaffNavActive } = fixture().load("src/lib/staff-teams.ts");
   const links = staffNavigation("ADMIN").flatMap(group => group.links);
-  for (const [pathname, search, expected] of [["/dashboard/cases", "team=finance", "Finance reviews"], ["/dashboard/teams/customer-support/audit", "", "CS audit logs"], ["/dashboard/resources", "team=safety", "Knowledge & updates"]]) {
+  for (const [pathname, search, expected] of [["/dashboard/cases", "team=safety", "Safety reviews"], ["/dashboard/teams/customer-support/audit", "", "CS audit logs"], ["/dashboard/resources", "team=safety", "Knowledge & updates"]]) {
     const active = links.filter(link => isStaffNavActive(link.href, pathname, new URLSearchParams(search)));
     assert.equal(active.length, 1); assert.equal(active[0].label, expected);
   }
 });
 
-for (const role of ["SUPPORT", "SUPPORT_SUPERVISOR", "FINANCE", "SAFETY"]) {
+for (const role of ["SUPPORT", "SUPPORT_SUPERVISOR", "SAFETY"]) {
   test(`${role} cannot open any staff roster or team audit page directly`, async () => {
-    for (const team of ["customer-support", "finance", "safety"]) for (const route of ["staff", "audit"]) {
+    for (const team of ["customer-support", "safety"]) for (const route of ["staff", "audit"]) {
       const f = fixture(role), Page = f.load(`src/app/dashboard/teams/[team]/${route}/page.tsx`).default;
       await assert.rejects(Page({ params: Promise.resolve({ team }), searchParams: Promise.resolve({}) }), /redirect:\/dashboard\/workspace/);
       assert.equal(f.calls.length, 0, "Management records must not be queried before authorization");
@@ -105,7 +106,7 @@ for (const role of ["SUPPORT", "SUPPORT_SUPERVISOR", "FINANCE", "SAFETY"]) {
 }
 
 test("cross-team overview links cannot expose another role's team", async () => {
-  for (const [role, team] of [["SUPPORT", "finance"], ["FINANCE", "safety"], ["SAFETY", "customer-support"]]) {
+  for (const [role, team] of [["SUPPORT", "safety"], ["SAFETY", "customer-support"]]) {
     const f = fixture(role), Page = f.load("src/app/dashboard/teams/[team]/page.tsx").default;
     await assert.rejects(Page({ params: Promise.resolve({ team }) }), /redirect:/);
     assert.equal(f.calls.length, 0);
@@ -113,11 +114,11 @@ test("cross-team overview links cannot expose another role's team", async () => 
 });
 
 test("team overviews scope their queues and hide management cards from staff", async () => {
-  for (const [role, slug, kind] of [["SUPPORT", "customer-support", "ESCALATION"], ["FINANCE", "finance", "FINANCE"], ["SAFETY", "safety", "SAFETY"]]) {
+  for (const [role, slug, kind] of [["SUPPORT", "customer-support", "ESCALATION"], ["SAFETY", "safety", "SAFETY"]]) {
     const f = fixture(role), Page = f.load("src/app/dashboard/teams/[team]/page.tsx").default;
     const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ team: slug }) }));
     assert(!html.includes("Team management"));
-    assert(f.calls.filter(call => call.table === "workflowCase").every(call => JSON.stringify(call.args.where).includes(`"kind":"${kind}"`)));
+    assert(f.calls.filter(call => call.table === "workflowCase").every(call => JSON.stringify(call.args.where).includes(role === "SUPPORT" ? '"createdById":"actor"' : `"kind":"${kind}"`)));
   }
 });
 
@@ -136,13 +137,13 @@ test("Admin's team review context fixes the case kind and preserves it in filter
   const query = f.calls.find(call => call.table === "workflowCase").args;
   assert(query.where.AND.some(part => part.kind === "ESCALATION"));
   assert(query.where.AND.some(part => part.assignedToId === "support-person"));
-  assert(html.includes('name="team" value="customer-support"')); assert(!html.includes('<option value="FINANCE"'));
+  assert(!html.includes('name="team"')); assert(!html.includes('Queue default'));
 });
 
 test("staff cannot switch team reviews or resources through query parameters", async () => {
-  for (const page of ["cases", "resources"]) {
+  for (const page of ["resources"]) {
     const f = fixture("SUPPORT"), Page = f.load(`src/app/dashboard/${page}/page.tsx`).default;
-    await assert.rejects(Page({ searchParams: Promise.resolve({ team: "finance" }) }), /redirect:/);
+    await assert.rejects(Page({ searchParams: Promise.resolve({ team: "safety" }) }), /redirect:/);
     assert.equal(f.calls.length, 0);
   }
 });
@@ -158,12 +159,12 @@ test("Admin team resources apply the same relevant categories as that team", asy
 test("invalid teams and invalid audit dates do not query management records", async () => {
   const f = fixture(), Page = f.load("src/app/dashboard/teams/[team]/audit/page.tsx").default;
   await assert.rejects(Page({ params: Promise.resolve({ team: "unknown" }), searchParams: Promise.resolve({}) }), /not-found/);
-  const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ team: "finance" }), searchParams: Promise.resolve({ from: "2026-10-30", to: "2026-10-01" }) }));
+  const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ team: "safety" }), searchParams: Promise.resolve({ from: "2026-10-30", to: "2026-10-01" }) }));
   assert(html.includes('role="alert"')); assert.equal(f.calls.length, 0);
 });
 
 test("publishing preserves team audit context and enforces the team's resource categories", async () => {
-  for (const [role, team, kind, expected] of [["ADMIN", "finance", "ANNOUNCEMENT", 201], ["ADMIN", "finance", "SAFETY_GUIDE", 403], ["SUPPORT_SUPERVISOR", "finance", "KNOWLEDGE", 403], ["SUPPORT_SUPERVISOR", "customer-support", "TEMPLATE", 201], ["FINANCE", "finance", "ANNOUNCEMENT", 403]]) {
+  for (const [role, team, kind, expected] of [["ADMIN", "safety", "ANNOUNCEMENT", 201], ["ADMIN", "safety", "KNOWLEDGE", 403], ["SUPPORT_SUPERVISOR", "safety", "KNOWLEDGE", 403], ["SUPPORT_SUPERVISOR", "customer-support", "TEMPLATE", 201]]) {
     const f = fixture(role), post = f.load("src/app/api/resources/route.ts").POST;
     const response = await post(new NextRequest("https://fixture.invalid/api/resources", { method: "POST", headers: { origin: "https://fixture.invalid", "Content-Type": "application/json" }, body: JSON.stringify({ team, kind, title: "Fixture", body: "Fixture guidance" }) }));
     assert.equal(response.status, expected, role + " " + kind);
@@ -173,9 +174,8 @@ test("publishing preserves team audit context and enforces the team's resource c
   }
 });
 
-test("new review redirects retain the owning team's sidebar context", async () => {
-  const f = fixture("FINANCE"), post = f.load("src/app/api/cases/route.ts").POST;
-  const response = await post(new NextRequest("https://fixture.invalid/api/cases", { method: "POST", headers: { origin: "https://fixture.invalid", "Content-Type": "application/json" }, body: JSON.stringify({ kind: "FINANCE", title: "Review", summary: "Fixture facts" }) }));
-  assert.equal(response.status, 201);
-  assert.equal((await response.json()).redirect, "/dashboard/cases/new-case?team=finance");
+test("retired Finance role cannot submit new reviews", async () => {
+  const f=fixture("FINANCE"),post=f.load("src/app/api/cases/route.ts").POST;
+  const response=await post(new NextRequest("https://fixture.invalid/api/cases",{method:"POST",headers:{origin:"https://fixture.invalid","Content-Type":"application/json"},body:JSON.stringify({kind:"FINANCE",title:"Review",summary:"Facts",priority:"NORMAL"})}));
+  assert.equal(response.status,401);
 });

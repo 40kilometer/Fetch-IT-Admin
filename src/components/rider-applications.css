@@ -63,3 +63,9 @@
 .oa-workflow-summary .oa-eyebrow{white-space:nowrap;font-size:10px}
 .oa-item-list{max-height:520px;overflow-y:auto;scrollbar-gutter:stable}
 @media(max-width:700px){.oa-workflow-summary>div{display:block}.oa-item-list{max-height:none;scrollbar-gutter:auto}.oa-detail-header .oa-note{max-width:100%}}
+
+.oa-badge[data-status="ACCEPTED"],.oa-badge[data-status="ACTIVE"],.oa-badge[data-status="RESOLVED"]{background:#dcfce7;color:#14532d;border:1px solid #86d8a0;font-weight:600}
+.oa-badge[data-status="PENDING"],.oa-badge[data-status="NEEDS_CORRECTION"],.oa-badge[data-status="FORCE_APPROVAL_PENDING"]{background:#fffbeb;color:#78350f;border:1px solid #f2cf72}
+.oa-badge[data-status="REJECTED"]{background:#fee2e2;color:#991b1b;border:1px solid #f3a3a3}
+.oa-badge[data-status="NOT_APPLICABLE"]{background:#f1f5f9;color:#475569}
+.oa-item-list .oa-review-status.status-accepted{background:#dcfce7;color:#14532d;border:1px solid #86d8a0;padding:4px 8px;border-radius:999px;font-weight:600}

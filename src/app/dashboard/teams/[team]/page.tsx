@@ -8,11 +8,11 @@ import { AdminIcon } from "@/components/admin-icon";
 
 export default async function TeamPage({ params }: { params: Promise<{ team: string }> }) {
   const { staff, team } = await requireTeamPage((await params).team);
-  const scope = { AND: [caseScope(staff), { kind: team.caseKind }] };
+  const scope = { AND: [caseScope(staff), ...(staff.role === "SUPPORT" ? [] : [{ kind: team.caseKind }])] };
   const [open, awaiting, mine, tickets] = await Promise.all([
-    db.workflowCase.count({ where: { AND: [scope, { status: { not: "RESOLVED" } }] } }),
-    db.workflowCase.count({ where: { AND: [scope, { status: "AWAITING_ADMIN" }] } }),
-    db.workflowCase.count({ where: { AND: [scope, { assignedToId: staff.id, status: { not: "RESOLVED" } }] } }),
+    db.workflowCase.count({ where: { AND: [scope, { status: "OPEN" }] } }),
+    db.workflowCase.count({ where: { AND: [scope, { status: {in:["IN_REVIEW","AWAITING_ADMIN","APPROVED","REJECTED"]} }] } }),
+    db.workflowCase.count({ where: { AND: [scope, { status: "RESOLVED" }] } }),
     team.slug === "customer-support" ? db.supportTicket.count({ where: { AND: [supportScope(staff), { status: { not: "RESOLVED" } }] } }) : null,
   ]);
   const tools = staffNavigation(staff.role).find(group => group.team === team.slug)?.links.filter(link => link.label !== "Overview") ?? [];
@@ -24,7 +24,7 @@ export default async function TeamPage({ params }: { params: Promise<{ team: str
     "Rider applications": "Review application documents, request corrections, and track assessments.",
     "Knowledge & updates": "Read guidance and announcements relevant to this team.",
   };
-  const stats = [{ label: "Open reviews", count: open, href: teamReviews(team) }, { label: "Awaiting approval", count: awaiting, href: teamReviews(team) + "&view=awaiting" }, { label: "Assigned to you", count: mine, href: teamReviews(team) + "&view=mine" }, ...(tickets === null ? [] : [{ label: "Open support requests", count: tickets, href: "/dashboard/support?status=active" }])];
+  const stats = [{ label: "Open", count: open, href: teamReviews(team)+"&status=OPEN" }, { label: "In review", count: awaiting, href: teamReviews(team) + "&status=IN_REVIEW" }, { label: "Resolved", count: mine, href: teamReviews(team) + "&status=RESOLVED" }, ...(tickets === null ? [] : [{ label: "Open support requests", count: tickets, href: "/dashboard/support?status=active" }])];
   const primary = tools.find(tool => tool.label === (team.slug === "customer-support" ? "Support inbox" : team.slug === "finance" ? "Payment records" : "Rider applications"));
   return <div><PageHeader eyebrow="Team workspace" title={team.label} description={team.description}>{primary && <Link className="btn btn-primary" href={primary.href}>{primary.label} →</Link>}</PageHeader>
     <div className="stat-grid">{stats.map(stat => <Link className="card staff-stat" href={stat.href} key={stat.label}><p>{stat.label}</p><strong>{stat.count}</strong><span className="muted small">Open queue →</span></Link>)}</div>

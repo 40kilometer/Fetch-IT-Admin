@@ -9,7 +9,8 @@ async function handlePATCH(request: NextRequest, { params }: { params: Promise<{
     const admin = await currentStaff('support');
     if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = await request.json().catch(() => null);
-    if (!body || !["OPEN", "IN_PROGRESS", "RESOLVED"].includes(body.status) || typeof body.reply !== "string" || body.reply.length > 2000 || (body.priority !== undefined && !["LOW","NORMAL","HIGH","URGENT"].includes(body.priority))) return NextResponse.json({ error: "Choose a valid status, priority, and reply of up to 2,000 characters." }, { status: 400 });
+    if (!body || !["OPEN", "IN_PROGRESS", "RESOLVED"].includes(body.status) || typeof body.reply !== "string" || body.reply.length > 2000) return NextResponse.json({ error: "Choose a valid status and reply of up to 2,000 characters." }, { status: 400 });
+    if(body.priority!==undefined) return NextResponse.json({error:'Choose priority when sending a supervisor or Safety handoff, not on the customer request.'},{status:400});
     const { id } = await params;
     const ticket = await db.supportTicket.findFirst({ where: { id,...supportScope(admin) }, include: { messages: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
     if (!ticket) return NextResponse.json({ error: "Request not found." }, { status: 404 });
@@ -25,7 +26,7 @@ async function handlePATCH(request: NextRequest, { params }: { params: Promise<{
     }
     const result = await db.$transaction(async tx => {
       await tx.$queryRaw`SELECT "id" FROM "SupportTicket" WHERE "id" = ${id} FOR UPDATE`;
-      const changed = await tx.supportTicket.updateMany({ where: { id, updatedAt: ticket.updatedAt }, data: { status: body.status, priority: body.priority ?? ticket.priority, assignedAdminId: assignee } });
+      const changed = await tx.supportTicket.updateMany({ where: { id, updatedAt: ticket.updatedAt }, data: { status: body.status, assignedAdminId: assignee } });
       if (!changed.count) return null;
       if (reply) {
         const createdAt = new Date(Math.max(Date.now(), ticket.lastCustomerMessageAt.getTime() + 1, (ticket.lastAdminReplyAt?.getTime() ?? 0) + 1));
@@ -33,7 +34,7 @@ async function handlePATCH(request: NextRequest, { params }: { params: Promise<{
         await enqueueSupportNotification(tx, message);
         await tx.supportTicket.update({ where: { id }, data: { lastAdminReplyAt: message.createdAt } });
       }
-      await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "SUPPORT_UPDATED", entityType: "SUPPORT", entityId: id, details: { status: body.status, priority: body.priority ?? ticket.priority, assignedAdminId: assignee, replyAdded: !!reply } } });
+      await tx.adminAudit.create({ data: { actorId: admin.id, actorName: admin.name, action: "SUPPORT_UPDATED", entityType: "SUPPORT", entityId: id, details: { status: body.status, assignedAdminId: assignee, replyAdded: !!reply } } });
       return tx.supportTicket.findUnique({ where: { id } });
     });
     return result ? NextResponse.json({ ticket: result }) : NextResponse.json({ error: "This request has changed. Refresh before saving." }, { status: 409 });

@@ -453,3 +453,11 @@ fieldset:disabled { opacity: .65; }
 .data-note { margin: 12px 0 18px; color: var(--text-muted); font-size: 12px; }
 .data-note summary { cursor: pointer; }
 .data-note p { max-width: 80ch; margin: 8px 0; }
+
+/* Operational feedback is text + color, and reflects saved server state. */
+.success-message{padding:12px 14px;border-radius:10px;border:1px solid #86d8a0;color:#14532d;background:#ecfdf3;overflow-wrap:anywhere}
+.warning-message{padding:12px 14px;border-radius:10px;border:1px solid #f2cf72;color:#78350f;background:#fffbeb;overflow-wrap:anywhere}
+.error-message{padding:12px 14px;border-radius:10px;border:1px solid #f3a3a3;color:#991b1b;background:#fef2f2;overflow-wrap:anywhere}
+.filters.queue-filters{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:16px;align-items:end}
+.queue-filters .queue-search{grid-column:1/-1}.queue-filters .input{width:100%;min-height:46px}.queue-filters .filter-actions{grid-column:1/-1;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.handoff-panel>summary{margin-bottom:12px}.staff-form fieldset{min-width:0}.staff-form textarea{resize:vertical}.staff-form[aria-busy=true]{cursor:progress}

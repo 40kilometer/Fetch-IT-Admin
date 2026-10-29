@@ -14,7 +14,6 @@ export type StaffTeam = {
 
 export const STAFF_TEAMS: readonly StaffTeam[] = [
   { slug: "customer-support", label: "Customer Support", shortLabel: "CS", description: "Handle customer requests, follow up on bookings, and coordinate support escalations.", permission: "support", roles: ["SUPPORT", "SUPPORT_SUPERVISOR"], caseKind: "ESCALATION", resourceKinds: ["KNOWLEDGE", "TEMPLATE", "ANNOUNCEMENT"], icon: "support" },
-  { slug: "finance", label: "Finance", shortLabel: "Finance", description: "Review payment records, investigate discrepancies, and prepare financial recommendations.", permission: "finance", roles: ["FINANCE"], caseKind: "FINANCE", resourceKinds: ["ANNOUNCEMENT"], icon: "finance" },
   { slug: "safety", label: "Safety Review", shortLabel: "Safety", description: "Review rider applications, investigate incidents, and preserve safety evidence.", permission: "safety", roles: ["SAFETY"], caseKind: "SAFETY", resourceKinds: ["SAFETY_GUIDE", "ANNOUNCEMENT"], icon: "cases" },
 ];
 
@@ -36,6 +35,7 @@ export function staffNavigation(role: string): StaffNavGroup[] {
     { href: "/dashboard/customers", label: "Customers", icon: "users" },
     { href: "/dashboard/workspace", label: "My workspace", icon: "workspace" },
     { href: "/dashboard/cases", label: "All reviews", icon: "cases" },
+    { href: "/dashboard/finance", label: "Payment records", icon: "finance" },
   ] }] : [];
   for (const team of STAFF_TEAMS.filter(team => hasPermission(role, team.permission))) {
     const links: StaffNavLink[] = [{ href: teamHome(team), label: "Overview", icon: "overview" }];
@@ -45,7 +45,7 @@ export function staffNavigation(role: string): StaffNavGroup[] {
     }
     if (team.slug === "finance") links.push({ href: "/dashboard/finance", label: "Payment records", icon: "finance" });
     if (team.slug === "safety") links.push({ href: "/dashboard/applications", label: "Rider applications", icon: "riders" });
-    links.push({ href: teamReviews(team), label: team.slug === "customer-support" ? "Escalations" : `${team.shortLabel} reviews`, icon: "cases" },
+    links.push({ href: teamReviews(team), label: team.slug === "customer-support" ? role === "SUPPORT" ? "My escalated requests" : "Escalation queue" : "Safety reviews", icon: "cases" },
       { href: `/dashboard/resources?team=${team.slug}`, label: "Knowledge & updates", icon: "resources" });
     if (admin) links.push({ href: `${teamHome(team)}/audit`, label: `${team.shortLabel} audit logs`, icon: "audit", management: true },
       { href: `${teamHome(team)}/staff`, label: `${team.shortLabel} staff`, icon: "team", management: true });

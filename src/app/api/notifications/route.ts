@@ -1,3 +1,4 @@
+import {reviewLabel,reviewStatus} from "@/lib/review-queue";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentStaff } from "@/lib/staff-access";
@@ -30,7 +31,7 @@ export async function GET() {
         select: { id: true, version: true, status: true, updatedAt: true, user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 30 }) : [],
     ]);
     const items = [
-      ...cases.map(c => ({ id: `case:${c.id}:${c.version}`, title: c.title, detail: `${c.kind} · ${c.status.replaceAll("_", " ")}`, at: c.updatedAt.toISOString(), href: `/dashboard/cases/${c.id}` })),
+      ...cases.map(c => ({ id: `case:${c.id}:${c.version}`, title: c.title, detail: `${reviewLabel(c.kind)} · ${reviewLabel(reviewStatus(c.status))}`, at: c.updatedAt.toISOString(), href: `/dashboard/cases/${c.id}` })),
       ...waiting.map(b => ({ id: `unassigned:${b.id}`, title: `${b.type === "RIDE" ? "Ride" : "Delivery"} needs a rider`, detail: `${b.refCode} · Waiting more than 5 minutes after pickup became due`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
       ...mismatches.map(b => ({ id: `payment:${b.id}:${b.updatedAt.toISOString()}`, title: "Cash payment needs review", detail: `${b.refCode} · Confirmed amounts do not match the fare`, at: b.updatedAt.toISOString(), href: operations ? `/dashboard/bookings/${b.id}` : `/dashboard/finance?ref=${encodeURIComponent(b.refCode)}` })),
       ...tickets.filter(t => !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
