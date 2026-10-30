@@ -1,4 +1,5 @@
 "use client";
+import {confirmStaffNavigation} from "@/components/staff-drafts";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { groupNotifications } from "@/lib/notification-groups";
@@ -49,7 +50,7 @@ export function AdminInbox({ adminId }: { adminId: string }) {
       <div className="inbox-tools"><button className="btn" disabled={!unread} onClick={() => mark(items.map(item => item.id))}>Mark all as read</button><button className="btn" onClick={() => setRetry(v => v + 1)}>Refresh inbox</button></div>
       {error && <p className="error-message" role="alert">{error}{error.includes("Sign in") && <> <a href="/login">Sign in</a></>}</p>}
       {!items.length && !error && <p className="empty-state">{checked ? "You’re all caught up. No items need attention." : "Loading notifications…"}</p>}
-      {groups.map(group=><details className="notification-group" key={group.key} open><summary>{group.label} · {group.items.length} outstanding</summary><ul className="inbox-list">{group.items.map(item => <li key={item.id}><button className={`inbox-item ${read.includes(item.id) ? "" : "unread"}`} onClick={() => { mark(item.ids); dialog.current?.close(); router.push(item.href); }}><span className="inbox-item-title">{item.title}{!read.includes(item.id) && <span className="unread-dot" aria-label="Unread" />}</span><span>{item.detail}</span><time className="muted small" dateTime={item.at}>{new Date(item.at).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</time></button></li>)}</ul>{!group.items.length && <p className="muted small">No outstanding items in this group.</p>}</details>)}
+      {groups.map(group=><details className="notification-group" key={group.key} open><summary>{group.label} · {group.items.length} outstanding</summary><ul className="inbox-list">{group.items.map(item => <li key={item.id}><button className={`inbox-item ${read.includes(item.id) ? "" : "unread"}`} onClick={async () => {dialog.current?.close();if(await confirmStaffNavigation("Open this notification with unfinished work?")){mark(item.ids);router.push(item.href);}}}><span className="inbox-item-title">{item.title}{!read.includes(item.id) && <span className="unread-dot" aria-label="Unread" />}</span><span>{item.detail}</span><time className="muted small" dateTime={item.at}>{new Date(item.at).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}</time></button></li>)}</ul>{!group.items.length && <p className="muted small">No outstanding items in this group.</p>}</details>)}
       <p className="muted small">Read status is saved on this device. Outstanding items stay here until the underlying work is complete. {checked && `Checked ${new Date(checked).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila" })}.`}</p>
     </dialog>
   </>;

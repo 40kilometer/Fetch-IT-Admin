@@ -11,9 +11,9 @@ export function readDraft(storage: Pick<Storage,"getItem"|"removeItem">, key: st
     return value;
   } catch { return null; }
 }
-export function writeDraft(storage: Pick<Storage,"setItem"|"removeItem">, key:string,values:DraftValues,revision:string,now=Date.now()) {
+export function writeDraft(storage: Pick<Storage,"setItem"|"removeItem">, key:string,values:DraftValues,revision:string,now=Date.now(),allowEmpty=false) {
   const safe=Object.fromEntries(Object.entries(values).filter(([k,v])=>!/password|secret|token|otp/i.test(k)&&typeof v==='string').map(([k,v])=>[k,v.slice(0,8000)]));
-  if(!Object.values(safe).some(v=>v.trim())){storage.removeItem(key);return null;}
+  if(!allowEmpty&&!Object.values(safe).some(v=>v.trim())){storage.removeItem(key);return null;}
   const value:SavedDraft={values:safe,revision,savedAt:now,expiresAt:now+DRAFT_TTL};storage.setItem(key,JSON.stringify(value));return value;
 }
 export function pruneDrafts(storage:Storage,now=Date.now()) {

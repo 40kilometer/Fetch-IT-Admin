@@ -12,6 +12,7 @@ function loader(mocks={},directory=root) {
     const filename=path.resolve(directory,file);if(cache.has(filename))return cache.get(filename);
     const exports={};cache.set(filename,exports);
     const localRequire=name=>{
+      if(name.endsWith('staff-drafts'))return {useStaffDraft:()=>({candidate:null,status:'',capture(){},clear(){},restore(){}}),DraftNotice:()=>null,confirmStaffNavigation:async()=>true};
       if(Object.hasOwn(mocks,name))return mocks[name];
       if(name.endsWith('.css'))return {};
       if(name.startsWith('@/')||name.startsWith('.')){

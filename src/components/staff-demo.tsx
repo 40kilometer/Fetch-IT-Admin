@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { DEMO_ROLES, DEMO_STAFF_EMAILS } from "@/lib/staff-demo-roles";
 import { AdminIcon } from "./admin-icon";
 import { announceStaffSessionChange } from "@/lib/staff-session-sync";
+import { confirmStaffNavigation, allowStaffAccountReload } from "./staff-drafts";
 
 type Status = { unlocked: boolean; canStart: boolean; currentRole: string | null; expiresAt: string | null; controllerName: string | null; canUseAdmin: boolean; currentEmail: string | null };
 async function statusRequest(signal?: AbortSignal): Promise<Status> {
@@ -36,7 +37,8 @@ export function StaffAccountPicker() {
     finally { pending.current = false; setBusy(""); setPassword(""); }
   }
   async function choose(role: string) {
-    if (pending.current) return;
+    if (pending.current || !await confirmStaffNavigation("Switch staff with unfinished work?")) return;
+    if(pending.current)return;
     pending.current = true; setBusy(role); setError("");
     try {
       const response = await fetch("/api/auth/demo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) });
@@ -47,6 +49,7 @@ export function StaffAccountPicker() {
       }
       // Reload the entire portal so a previous role's cached navigation is gone.
       announceStaffSessionChange();
+      allowStaffAccountReload();
       window.location.assign(data.redirect);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not switch roles."); pending.current = false; setBusy(""); }
   }
@@ -67,12 +70,14 @@ export function StaffAccountPicker() {
 export function StaffSessionReturn() {
   const pending = useRef(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function finish() {
-    if (pending.current) return;
+    if (pending.current || !await confirmStaffNavigation("Return to your original account with unfinished work?")) return;
+    if(pending.current)return;
     pending.current = true; setBusy(true); setError("");
     try {
       const response = await fetch("/api/auth/demo", { method: "DELETE" }), data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not return to your original account.");
       announceStaffSessionChange();
+      allowStaffAccountReload();
       window.location.assign(data.redirect);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Please retry."); pending.current = false; setBusy(false); }
   }

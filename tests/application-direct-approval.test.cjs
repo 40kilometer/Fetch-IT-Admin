@@ -14,7 +14,7 @@ function loader(mocks = {}) {
     const exports = {}; cache.set(filename, exports);
     const localRequire = name => {
       if (Object.hasOwn(mocks, name)) return mocks[name];
-      if(name.endsWith("staff-drafts"))return {useStaffDraft:()=>({candidate:null,status:"",capture(){},clear(){},restore(){}}),DraftNotice:()=>null};
+      if(name.endsWith("staff-drafts"))return {useStaffDraft:()=>({candidate:null,status:"",capture(){},clear(){},restore(){}}),DraftNotice:()=>null,confirmStaffNavigation:async()=>true};
       if (name.endsWith('.css')) return {};
       if (name.startsWith('@/')) { const base = 'src/' + name.slice(2); return load(base + (fs.existsSync(path.join(root, base + '.ts')) ? '.ts' : '.tsx')); }
       if (name.startsWith('.')) { const base = path.resolve(path.dirname(filename), name); return load(base + (fs.existsSync(base + '.ts') ? '.ts' : '.tsx')); }
