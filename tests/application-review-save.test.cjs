@@ -158,7 +158,7 @@ test('the review button shows Saving and confirms only a successful response', a
       assert(elements(busy).some(e => e.type === 'button' && e.props.children === 'Saving…' && e.props.disabled));
       pending.resolve(outcome); await new Promise(setImmediate);
       const done = local.render(Control, props); assert.equal(done.props['aria-busy'], false);
-      assert.equal(elements(done).some(e => e.props?.role === 'status' && e.props.className === 'success-message' && e.props.children === 'Decision saved.'), outcome);
+      assert.equal(elements(done).some(e => e.props?.role === 'status' && e.props.className === 'success-message' && e.props.children === 'Item review saved. Checklist progress updated.'), outcome);
     }
   } finally { global.fetch = nativeFetch; }
 });

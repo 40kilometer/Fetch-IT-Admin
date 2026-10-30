@@ -1,3 +1,4 @@
+import { AutoFilterForm } from "@/components/auto-filter-form";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-policy";
 import { PAYMENT_STATUS_LABEL } from "@/lib/payment-policy";
 import Link from "next/link";
@@ -21,7 +22,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
   return <div>
     <div className="page-heading"><div><div className="eyebrow">BOOKING MANAGEMENT</div><h1>Bookings</h1><p className="muted small">Find a booking, review its progress, and resolve exceptions.</p></div><a className="btn" href={`/api/bookings/export?${bookingQuery(filters)}`}>Export CSV</a></div>
     {attention && <p className="muted small">Attention filter: {attention}. <Link href="/dashboard/bookings">Show all bookings →</Link></p>}
-    <form key={bookingQuery(filters)} className="card filters">
+    <AutoFilterForm className="card filters booking-filters">
       {attention && <input type="hidden" name="attention" value={filters.attention} />}
       <label>Search bookings<input className="input" name="q" defaultValue={filters.q} placeholder="Reference or address" maxLength={100} /></label>
       <label>Status<select className="input" name="status" defaultValue={filters.status ?? ""}><option value="">All statuses</option><option value="ACTIVE">Active bookings</option>{Object.entries(BOOKING_STATUS_LABEL).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -29,8 +30,8 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
       <label>Service<select className="input" name="type" defaultValue={filters.type ?? ""}><option value="">All services</option><option value="DELIVERY">Delivery</option><option value="RIDE">Ride</option></select></label>
       <label>From date<input className="input" type="date" name="from" defaultValue={filters.from} /></label>
       <label>To date<input className="input" type="date" name="to" defaultValue={filters.to} /></label>
-      <div className="filter-actions"><button className="btn btn-primary" type="submit">Apply filters</button><Link className="btn" href="/dashboard/bookings">Clear</Link><p className="muted small">Booking dates use Philippine time. CSV includes up to 5,000 matches.</p></div>
-    </form>
+      <div className="filter-actions"><Link className="btn" href="/dashboard/bookings">Clear</Link><p className="muted small">Booking dates use Philippine time. CSV includes up to 5,000 matches.</p></div>
+    </AutoFilterForm>
     {error && <p className="error-message" role="alert">{error}</p>}
     {!bookings.length && !error && <div className="card empty-state">No bookings match these filters.</div>}
     {bookings.length > 0 && <>

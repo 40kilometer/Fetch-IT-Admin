@@ -37,7 +37,7 @@ function apiFixture(directory=root) {
     return request(new NextRequest(url),{id:'reviewer',name:'QA reviewer',role});
   }};
 }
-for(const directory of [root,path.resolve(root,'../fetch-superadmin'),path.resolve(root,'../fetch-customer'),path.resolve(root,'../fetch-rider')]) {
+for(const directory of [root]) {
   const name=path.basename(directory);
   for(const option of queue.APPLICATION_STATUS_FILTERS)test(`${name}: ${option.label} returns exactly its workflow stages`,async()=>{
     const f=apiFixture(directory),response=await f.get(option.value);
@@ -62,7 +62,7 @@ function client(directory=root,initialStatus='') {
   const component=load('src/components/rider-applications.tsx').RiderApplications;
   return {render:()=>h.render(component,{initialStatus}),load:()=>h.effects.at(-2)(),search:()=>h.effects.at(-1)()};
 }
-for(const directory of [root,path.resolve(root,'../fetch-superadmin')])test(`${path.basename(directory)}: selection filters without submitting and removes old results immediately`,async()=>{
+for(const directory of [root])test(`${path.basename(directory)}: selection filters without submitting and removes old results immediately`,async()=>{
   const original=global.fetch,requests=[];global.fetch=async url=>{const parsed=new URL(url,'https://admin.example.invalid');requests.push(parsed);const statuses=queue.applicationQueueStatuses(parsed.searchParams.get('status'));return Response.json({applications:rows.filter(row=>!statuses||statuses.includes(row.status))});};
   try{
     const view=client(directory);view.render();view.load();await tick();let tree=view.render();

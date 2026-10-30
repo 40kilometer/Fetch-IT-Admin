@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { REVIEW_PRIORITIES, REVIEW_STATUSES, reviewLabel } from "@/lib/review-queue";
 
 type Queue = { q: string; status: string; priority?: string; sort: string };
-export function QueueFilters({ initial, priorities = false, searchLabel = "Search cases", placeholder = "Title, case ID, or reported facts" }: { initial: Queue; priorities?: boolean; searchLabel?: string; placeholder?: string }) {
+export function QueueFilters({ initial, priorities = false, hideStatus = false, searchLabel = "Search cases", placeholder = "Title, case ID, or reported facts" }: { initial: Queue; priorities?: boolean; hideStatus?: boolean; searchLabel?: string; placeholder?: string }) {
   const router = useRouter(), pathname = usePathname(), search = useSearchParams();
   const [q, setQ] = useState(initial.q), [pending, startTransition] = useTransition();
   const [selection,setSelection]=useState({status:initial.status,priority:initial.priority??"",sort:initial.sort});
@@ -15,7 +15,7 @@ export function QueueFilters({ initial, priorities = false, searchLabel = "Searc
     if (timer.current) clearTimeout(timer.current);timer.current=null;
     const next = new URLSearchParams(params.current);
     // Hidden legacy filters must not affect a queue whose controls no longer expose them.
-    for (const key of ["page", "kind", "view", "unanswered"]) next.delete(key);
+    for (const key of ["page", "kind"]) next.delete(key);
     if (!priorities) next.delete("priority");
     for (const [key, value] of Object.entries(change)) value ? next.set(key, value) : next.delete(key);
     params.current = next;
@@ -23,9 +23,9 @@ export function QueueFilters({ initial, priorities = false, searchLabel = "Searc
   }
   return <form className="card filters queue-filters" aria-label="Queue filters" aria-busy={pending} onSubmit={event => { event.preventDefault(); navigate({ q, status: selection.status, sort: selection.sort }); }}>
     <label className="queue-search">{searchLabel}<input className="input" name="q" value={q} maxLength={100} placeholder={placeholder} onChange={event => { const value = event.target.value; setQ(value); if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => navigate({ q: value }), 300); }} /></label>
-    <label>Status<select className="input" name="status" value={selection.status} onChange={event => {setSelection({...selection,status:event.target.value});navigate({ status: event.target.value, q });}}>{REVIEW_STATUSES.map(value => <option key={value} value={value}>{reviewLabel(value)}</option>)}</select></label>
+    {!hideStatus && <label>Status<select className="input" name="status" value={selection.status} onChange={event => {setSelection({...selection,status:event.target.value});navigate({ status: event.target.value, q });}}>{REVIEW_STATUSES.map(value => <option key={value} value={value}>{reviewLabel(value)}</option>)}</select></label>}
     {priorities && <label>Priority<select className="input" name="priority" value={selection.priority} onChange={event => {setSelection({...selection,priority:event.target.value});navigate({ priority: event.target.value, q });}}><option value="">All priorities</option>{REVIEW_PRIORITIES.map(value => <option key={value} value={value}>{reviewLabel(value)}</option>)}</select></label>}
     <label>Sort by<select className="input" name="sort" value={selection.sort} onChange={event => {setSelection({...selection,sort:event.target.value});navigate({ sort: event.target.value, q });}}><option value="oldest">Oldest first</option><option value="newest">Newest first</option></select></label>
-    <div className="filter-actions"><button type="button" className="btn" onClick={() => { setQ("");setSelection({status:"OPEN",priority:"",sort:"oldest"}); navigate({ q: "", status: "OPEN", priority: "", sort: "oldest", team:"",assigned:"" }); }}>Clear filters</button>{pending && <span role="status">Updating results…</span>}</div>
+    <div className="filter-actions"><button type="button" className="btn" onClick={() => { setQ("");setSelection({status:"OPEN",priority:"",sort:"oldest"}); navigate({ q: "", status: "OPEN", priority: "", sort: "oldest", assigned:"" }); }}>Clear filters</button><span role="status">{pending ? "Updating results…" : "Filters update automatically"}</span></div>
   </form>;
 }

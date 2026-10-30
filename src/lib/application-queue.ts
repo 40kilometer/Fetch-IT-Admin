@@ -1,4 +1,6 @@
 export const APPLICATION_STATUS_FILTERS = [
+  { value: 'ACTION_REQUIRED', label: 'Action required', statuses: ['SUBMITTED', 'IN_REVIEW', 'RECOMMENDED', 'ORIENTATION_SCHEDULED', 'ASSESSED', 'DEMO_COMPLETED', 'FORCE_APPROVAL_PENDING'] },
+  { value: 'DRAFT', label: 'Drafts', statuses: ['DRAFT'] },
   { value: 'PENDING_VERIFICATION', label: 'Pending verification', statuses: ['SUBMITTED', 'IN_REVIEW'] },
   { value: 'NEEDS_CORRECTION', label: 'Needs correction', statuses: ['NEEDS_CORRECTION'] },
   { value: 'ORIENTATION', label: 'For orientation', statuses: ['RECOMMENDED', 'ORIENTATION_SCHEDULED'] },
@@ -19,5 +21,5 @@ export function applicationQueueStatuses(value:string|null):string[]|undefined {
 }
 
 export function normalizeApplicationFilter(value:string) {
-  return APPLICATION_STATUS_FILTERS.find(option=>option.value===value||(option.statuses as readonly string[]).includes(value))?.value??'';
+  return APPLICATION_STATUS_FILTERS.find(option=>option.value===value)?.value ?? APPLICATION_STATUS_FILTERS.find(option=>option.value!=="ACTION_REQUIRED"&&(option.statuses as readonly string[]).includes(value))?.value??'';
 }

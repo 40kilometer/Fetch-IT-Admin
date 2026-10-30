@@ -1,3 +1,4 @@
+import { applicationStatusLabel } from "@/lib/workflow-presentation";
 import Link from 'next/link';
 import { db } from '@/lib/db';
 
@@ -24,7 +25,7 @@ export async function RiderApplicationSummary() {
     {total ? <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12 }}>{STAGES.filter(([status]) => counts.has(status)).map(([status, label]) => {
       const count = counts.get(status) ?? 0;
       return <li key={status} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 160px) minmax(40px, 1fr) 32px', gap: 12, alignItems: 'center', fontSize: 13 }}>
-        <span>{label}</span><div aria-hidden="true" style={{ height: 10, background: '#edf1ea', borderRadius: 10, overflow: 'hidden' }}><div style={{ height: '100%', width: `${count / max * 100}%`, background: status === 'NEEDS_CORRECTION' ? '#cf8a35' : '#b94c24', borderRadius: 10 }}/></div><strong style={{ textAlign: 'right' }}>{count}</strong>
+        <span>{applicationStatusLabel(status)}</span><div aria-hidden="true" style={{ height: 10, background: '#edf1ea', borderRadius: 10, overflow: 'hidden' }}><div style={{ height: '100%', width: `${count / max * 100}%`, background: status === 'NEEDS_CORRECTION' ? '#cf8a35' : '#b94c24', borderRadius: 10 }}/></div><strong style={{ textAlign: 'right' }}>{count}</strong>
       </li>;
     })}</ul> : <p className="muted small">New applications will appear here when riders start their application.</p>}
   </section>;

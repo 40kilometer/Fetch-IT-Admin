@@ -1,6 +1,6 @@
 export const REVIEW_STATUSES = ["OPEN", "IN_REVIEW", "RESOLVED"] as const;
 export const REVIEW_PRIORITIES = ["URGENT", "HIGH", "NORMAL", "LOW"] as const;
-export const reviewLabel = (value: string) => ({ OPEN: "Open", IN_REVIEW: "In review", IN_PROGRESS: "In review", RESOLVED: "Resolved", ESCALATION: "Supervisor help", SAFETY: "Safety Review", FINANCE: "Admin financial review" }[value] ?? value.toLowerCase().replaceAll("_", " ").replace(/^./, c => c.toUpperCase()));
+export const reviewLabel = (value: string) => ({ AWAITING_ADMIN: "Awaiting Admin decision", APPROVED: "Action approved", REJECTED: "More review needed", OPEN: "Open", IN_REVIEW: "In review", IN_PROGRESS: "In review", RESOLVED: "Resolved", ESCALATION: "Supervisor help", SAFETY: "Safety Review", FINANCE: "Admin financial review" }[value] ?? value.toLowerCase().replaceAll("_", " ").replace(/^./, c => c.toUpperCase()));
 // Approval stages remain intact; they are all ongoing reviews in the queue.
 export function reviewStatus(status: string) {
   return status === "OPEN" ? "OPEN" : status === "RESOLVED" ? "RESOLVED" : "IN_REVIEW";

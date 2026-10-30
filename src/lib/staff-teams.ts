@@ -34,7 +34,7 @@ export function staffNavigation(role: string): StaffNavGroup[] {
     { href: "/dashboard/riders", label: "Riders", icon: "riders" },
     { href: "/dashboard/customers", label: "Customers", icon: "users" },
     { href: "/dashboard/workspace", label: "My workspace", icon: "workspace" },
-    { href: "/dashboard/cases", label: "All reviews", icon: "cases" },
+    { href: "/dashboard/cases", label: "Reviews & escalations", icon: "cases" },
     { href: "/dashboard/finance", label: "Payment records", icon: "finance" },
   ] }] : [];
   for (const team of STAFF_TEAMS.filter(team => hasPermission(role, team.permission))) {

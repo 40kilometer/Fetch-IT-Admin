@@ -126,7 +126,7 @@ test('previously completed autofill applications can receive the missing service
 test('Admin and Safety UI expose direct approval and accessible audit history without a recommendation step', () => {
   for (const role of ['ADMIN', 'SAFETY']) {
     const f = fixture(role); let state = 0;
-    const react = { ...React, useState: initial => [state++ === 0 ? { application: f.app, actor: { id: f.actor.id, canActivate: true, canManage: role === 'ADMIN' } } : initial, () => {}], useRef: value => ({ current: value }), useCallback: fn => fn, useEffect() {} };
+    const react = { ...React, useState: initial => [initial && typeof initial === 'object' && !Array.isArray(initial) && Object.keys(initial).length === 0 ? { application: f.app, actor: { id: f.actor.id, canActivate: true, canManage: role === 'ADMIN' } } : initial, () => {}], useRef: value => ({ current: value }), useCallback: fn => fn, useEffect() {} };
     const load = loader({ react, 'next/link': { __esModule: true, default: 'a' }, '@/hooks/use-local-demo': { useLocalDemo: () => ({ enabled: false }) }, '@/hooks/use-visible-poll': { useVisiblePoll() {} } });
     const Component = load('src/components/rider-applications.tsx').RiderApplications;
     const html = renderToStaticMarkup(React.createElement(Component, { id: f.app.id }));
@@ -215,7 +215,7 @@ test('Approve and Reject buttons follow the result gate while Force approval and
   }
   for (const [overrides, approve, reject] of cases) {
     const html = render(fixture('SAFETY', overrides).app);
-    for (const [label, enabled] of [['Approve rider services', approve], ['Reject application', reject], ['Force approval', true]]) {
+    for (const [label, enabled] of [['Approve rider services', approve], ['Reject application', reject], ['Request Admin exception approval', true]]) {
       const match = html.match(new RegExp('<button([^>]*)>' + label + '</button>')); assert(match, label);
       assert.equal(!match[1].includes('disabled'), enabled, label);
     }
@@ -228,7 +228,7 @@ test('Approve and Reject buttons follow the result gate while Force approval and
 
 test('only Admin receives notifications of pending force requests', async () => {
   let queries = 0;
-  const db = { booking: { findMany: async () => [] }, supportTicket: { findMany: async () => [] }, supportMessage: { findMany: async () => [] }, workflowCase: { findMany: async () => [] }, riderApplication: { findMany: async () => { queries++; return [{ id: 'app', version: 2, updatedAt: new Date(), user: { name: 'Rider' } }]; } } };
+  const db = { $queryRaw: async () => [], booking: { findMany: async () => [] }, supportTicket: { findMany: async () => [] }, supportMessage: { findMany: async () => [] }, workflowCase: { findMany: async () => [] }, riderApplication: { findMany: async () => { queries++; return [{ id: 'app', status: 'FORCE_APPROVAL_PENDING', version: 2, updatedAt: new Date(), user: { name: 'Rider' } }]; } } };
   for (const role of ['ADMIN', 'SAFETY']) {
     const load = loader({ '@/lib/db': { db }, '@/lib/admin-access': {}, '@/lib/staff-access': { currentStaff: async () => ({ id: role, role }) } });
     const response = await load('src/app/api/notifications/route.ts').GET(); assert.equal(response.status, 200);

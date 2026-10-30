@@ -69,3 +69,5 @@
 .oa-badge[data-status="REJECTED"]{background:#fee2e2;color:#991b1b;border:1px solid #f3a3a3}
 .oa-badge[data-status="NOT_APPLICABLE"]{background:#f1f5f9;color:#475569}
 .oa-item-list .oa-review-status.status-accepted{background:#dcfce7;color:#14532d;border:1px solid #86d8a0;padding:4px 8px;border-radius:999px;font-weight:600}
+.oa-list .oa-card.oa-row{padding:14px 18px;margin:7px 0}.oa-list .oa-row p{font-size:13px;margin:4px 0}.oa-list .oa-row small{font-size:12px}.oa-list .oa-row .oa-badge{max-width:240px;text-align:center}.service-prerequisites{padding:16px;border:1px solid #dae2d9;border-radius:10px;margin:14px 0}.service-prerequisites ul{padding-left:20px;line-height:1.9}.service-prerequisites button{margin:4px 8px 0 0}.oa-item-list .oa-review-status{font-size:12px}
+@media(max-width:700px){.oa-list .oa-row{align-items:flex-start}.oa-list .oa-row .oa-badge{max-width:160px}}
