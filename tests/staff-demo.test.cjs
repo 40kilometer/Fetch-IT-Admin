@@ -222,7 +222,7 @@ test('logging out closes the demo grant and revokes both sessions', async () => 
 test('a cleanup failure still clears both browser authentication cookies', async () => {
   const f = fixture(); f.startAs(); await f.demo.switchDemoRole('SUPPORT'); f.state.failTransaction = true;
   const logout = f.load('src/app/api/auth/logout/route.ts').POST;
-  assert.equal((await logout(f.request('POST'))).status, 503);
+  const response=await logout(f.request('POST'));assert.equal(response.status,503);assert.equal((await response.json()).signedOut,true);
   assert.equal(f.cookies.size, 0);
 });
 

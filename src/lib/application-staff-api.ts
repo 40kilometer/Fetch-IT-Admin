@@ -6,6 +6,7 @@ import { RateLimitError } from "./request-guard";
 import { ApplicationError } from "./rider-application-policy";
 import { readApplicationDocument } from "./application-storage";
 import { sendApplicationEmail, orientationLetter, applicationMessage } from "./application-mail";
+import { scheduleApplicationEmail } from "./application-email-delivery";
 
 export async function staffApplicationRequest(req: NextRequest, actor: ApplicationActor, id?: string) {
   try {
@@ -22,13 +23,10 @@ export async function staffApplicationRequest(req: NextRequest, actor: Applicati
     // Mutations validate ownership and version under the application lock. Reuse
     // their committed snapshot instead of loading every relation before and after.
     if (body && body.action !== "preview" && body.action !== "email") {
-      let saved = await reviewApplication(id, actor, body);
+      const saved = await reviewApplication(id, actor, body);
       const kind = ({ corrections: "CORRECTIONS", schedule: "ORIENTATION", activate: "ACTIVATED", "complete-demo": "ACTIVATED", reject: "REJECTED", ...( ["ACTIVE", "DEMO_COMPLETED"].includes(saved.status) ? { "force-approval": "ACTIVATED", "approve-force": "ACTIVATED" } : {}) } as Record<string, string>)[String(body.action)];
       const pending = kind ? saved.emails.find(email => email.kind === kind && email.status === "PENDING") : undefined;
-      if (pending) {
-        await sendApplicationEmail(pending.id);
-        saved = await db.riderApplication.findUniqueOrThrow({ where: { id }, include: applicationDetail });
-      }
+      if (pending) scheduleApplicationEmail(pending.id);
       const approvals = ["activate", "complete-demo", "reopen", "force-approval", "approve-force"].includes(String(body.action))
         ? await db.riderServiceApproval.findMany({ where: { userId: saved.userId } }) : undefined;
       return NextResponse.json({ application: publicApplication(saved, true), ...(approvals ? { approvals } : {}) });

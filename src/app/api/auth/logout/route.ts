@@ -13,7 +13,7 @@ export async function POST(req:NextRequest) {
     });
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "Session cleanup is temporarily unavailable." }, { status: 503 });
+    return NextResponse.json({ signedOut: true, error: "Signed out on this browser. Server session cleanup could not be confirmed." }, { status: 503 });
   } finally {
     await clearDemoCookie();
     await clearAdminSessionCookie();

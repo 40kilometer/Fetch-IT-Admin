@@ -38,13 +38,13 @@ function fixture(role = 'SAFETY', overrides = {}) {
   const copy = () => structuredClone(app);
   const db = { $queryRaw: async () => [],
     riderApplication: { findUnique: async () => copy(), findUniqueOrThrow: async () => copy(), update: async ({ data }) => { for (const [key, value] of Object.entries(data)) app[key] = key === 'version' ? app.version + value.increment : value; return copy(); } },
-    riderApplicationEvent: { findFirst: async ({ where }) => structuredClone(app.events.find(e => e.action === where.action) ?? null), create: async ({ data }) => { app.events.unshift({ id: 'event-' + app.events.length, createdAt: new Date(), ...data }); } },
+    riderApplicationEvent: { findFirst: async ({ where }) => structuredClone(app.events.find(e => e.action === where.action) ?? null), create: async ({ data }) => { const event={ id: 'event-' + app.events.length, createdAt: new Date(), ...data };app.events.unshift(event);return structuredClone(event); } },
     adminAudit: { create: async ({ data }) => { audits.push(data); } },
     riderApplicationEmail: { create: async ({ data }) => { app.emails.unshift({ id: 'email-' + app.emails.length, status: 'PENDING', ...data }); } },
     riderServiceApproval: { findFirst: async ({ where }) => approvals.find(a => a.userId === where.userId && where.service.in.includes(a.service)) ?? null, findMany: async () => approvals, upsert: async ({ create }) => { approvals.push(create); } },
     riderProfile: { update: async () => { profileWrites++; } },
   }; db.$transaction = callback => callback(db);
-  const load = loader({ './db': { db }, './request-guard': { RateLimitError: class extends Error {} }, './application-storage': {}, './application-mail': { sendApplicationEmail: async id => { sentMails.push(id); }, orientationLetter: async () => Buffer.from('PDF'), applicationMessage: () => ({ text: 'Preview' }) } });
+  const load = loader({ './db': { db }, './request-guard': { RateLimitError: class extends Error {} }, './application-storage': {}, './application-email-delivery': {scheduleApplicationEmail:id=>sentMails.push(id)}, './application-mail': { sendApplicationEmail: async id => { sentMails.push(id); }, orientationLetter: async () => Buffer.from('PDF'), applicationMessage: () => ({ text: 'Preview' }) } });
   const review = (action, body = {}, person = actor) => load('src/lib/rider-application.ts').reviewApplication(app.id, person, { action, version: app.version, ...body });
   const request = (method = 'GET', body, person = actor) => load('src/lib/application-staff-api.ts').staffApplicationRequest(new NextRequest('https://admin.example.invalid/api/rider-applications/application', { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) }), person, app.id);
   return { app, actor, audits, approvals, sentMails, review, request, load, profileWrites: () => profileWrites };
@@ -191,7 +191,7 @@ test('autofill does not change the audited Admin force approval behavior', async
  assert.equal((await f.review('force-approval',{services:['DELIVERY'],reason:'Approve for the presentation after checklist review.'})).status,'ACTIVE');
  assert.equal(f.approvals.length,1);assert.equal(f.profileWrites(),1);assert.equal(f.audits[0].details.autofilled,true);
 });
-test('the API sends no activation email for a pending Safety request and sends it after Admin approval', async () => {
+test('the API schedules no activation email for a pending Safety request and schedules it after Admin approval', async () => {
   const f = fixture('SAFETY');
   let response = await f.request('POST', { action: 'force-approval', version: f.app.version, reason: 'Management exception requested.', services: ['DELIVERY'] });
   assert.equal(response.status, 200); assert.equal(f.sentMails.length, 0); assert.equal(f.approvals.length, 0);

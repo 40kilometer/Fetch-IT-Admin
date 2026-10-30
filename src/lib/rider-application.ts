@@ -40,8 +40,9 @@ export async function lockApplication(tx: Prisma.TransactionClient, id: string, 
   return app;
 }
 export async function applicationEvent(tx: Prisma.TransactionClient, id: string, actor: ApplicationActor, action: string, details: Prisma.InputJsonValue = {}) {
-  await tx.riderApplicationEvent.create({ data: { applicationId: id, actorId: actor.id, actorName: actor.name, action, details } });
+  const event = await tx.riderApplicationEvent.create({ data: { applicationId: id, actorId: actor.id, actorName: actor.name, action, details } });
   if (actor.role !== "RIDER") await tx.adminAudit.create({ data: { actorId: actor.id, actorName: actor.name, action: `APPLICATION_${action}`, entityType: "RIDER_APPLICATION", entityId: id, details } });
+  return event;
 }
 export function requireEditable(app: RiderApplication) {
   if (!["DRAFT", "NEEDS_CORRECTION"].includes(app.status)) throw new ApplicationError("This application is locked while it is being reviewed.", 409);
@@ -121,6 +122,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       if (app.assignedToId && app.assignedToId !== actor.id) throw new ApplicationError("Another reviewer has claimed this application.", 409);
     } else if (!admin && app.assignedToId !== actor.id) throw new ApplicationError("Claim this application before reviewing it.", 403);
     const data: Prisma.RiderApplicationUpdateInput = { version: { increment: 1 } };
+    let reviewedDocument: RiderApplicationDocument | undefined;
     let eventDetails: Prisma.InputJsonValue = {};
     const reviewStates = ["SUBMITTED", "IN_REVIEW"];
     if (body.action === "claim") {
@@ -136,7 +138,7 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
         if (!doc) throw new ApplicationError("Current document not found.", 404);
         if (status === "NOT_APPLICABLE" && requiredDocuments(app.vehicleClass, app.services, app.fields as Fields).includes(doc.kind)) throw new ApplicationError("A required document cannot be marked Not applicable.");
         if (status === "ACCEPTED" && doc.expiresAt && doc.expiresAt <= new Date()) throw new ApplicationError("Expired documents cannot be accepted.");
-        await tx.riderApplicationDocument.update({ where: { id: doc.id }, data: { status, reason: note || null, reviewedById: actor.id, reviewedAt: new Date() } });
+        reviewedDocument = await tx.riderApplicationDocument.update({ where: { id: doc.id }, data: { status, reason: note || null, reviewedById: actor.id, reviewedAt: new Date() } });
         eventDetails = { kind: doc.kind, documentId: doc.id, status, reason: note };
       } else {
         const section = String(body.section);
@@ -228,8 +230,11 @@ export async function reviewApplication(id: string, actor: ApplicationActor, bod
       await tx.riderApplicationDocument.updateMany({ where: { applicationId: id, current: true }, data: { status: "PENDING", reviewedAt: null, reviewedById: null, reason: null } });
       eventDetails = { reason: note };
     } else throw new ApplicationError("Choose a valid review action.");
-    await tx.riderApplication.update({ where: { id }, data });
-    await applicationEvent(tx, id, actor, String(body.action).toUpperCase(), eventDetails);
+    const updated = await tx.riderApplication.update({ where: { id }, data });
+    const event = await applicationEvent(tx, id, actor, String(body.action).toUpperCase(), eventDetails);
+    // A single-item review changes only these rows. Return database write results
+    // under the same locks instead of rereading every document, email and event.
+    if (body.action === "review") return { ...app, ...updated, documents: app.documents.map(doc => reviewedDocument?.id === doc.id ? reviewedDocument : doc), events: [event, ...app.events].slice(0, 80) };
     return tx.riderApplication.findUniqueOrThrow({ where: { id }, include: detail });
   }, { maxWait: 10000, timeout: 20000 });
 }

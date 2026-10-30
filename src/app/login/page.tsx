@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { announceStaffSessionChange } from "@/lib/staff-session-sync";
 import { staffReturnPath } from "@/lib/staff-return-path";
 import { PASSWORD_REQUIREMENT } from "@/lib/staff-password-policy";
@@ -17,6 +17,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("logout") === "cleanup-pending") setNotice("Signed out on this browser. Server session cleanup could not be confirmed. If you use a shared device, close other Fetch-It tabs.");
+  }, []);
   async function demoLogin() {
     if (pending.current) return;
     pending.current = true; setLoading(true); setError('');

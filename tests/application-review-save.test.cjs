@@ -40,7 +40,7 @@ function fixture(overrides = {}) {
       findUniqueOrThrow: async () => { snapshots++; return copy(); },
       update: async ({ data, include }) => { assert.equal(include, undefined); writes++; for (const [key, value] of Object.entries(data)) app[key] = key === 'version' ? app.version + value.increment : value; return copy(); },
     },
-    riderApplicationDocument: { update: async ({ where, data }) => { writes++; Object.assign(app.documents.find(d => d.id === where.id), data); } },
+    riderApplicationDocument: { update: async ({ where, data }) => { writes++; const doc=app.documents.find(d => d.id === where.id);Object.assign(doc, data);return structuredClone(doc); } },
     riderApplicationEvent: { create: async ({ data }) => { writes++; const event = { id: 'saved-event', ...data }; app.events.unshift(event); return event; } },
     adminAudit: { create: async () => { writes++; } },
     riderServiceApproval: { findMany: async () => [] },
@@ -57,7 +57,7 @@ function fixture(overrides = {}) {
   return { app, call, counts: () => ({ snapshots, writes, mails }) };
 }
 
-test('save returns the committed decision, incremented version and its audit event using only two detail snapshots', async () => {
+test('save returns the committed decision, incremented version and its audit event using one detail snapshot', async () => {
   const f = fixture();
   const section = Object.keys(loader()('src/lib/rider-application-policy.ts').SECTION_FIELDS)[0];
   const response = await f.call({ section });
@@ -65,7 +65,7 @@ test('save returns the committed decision, incremented version and its audit eve
   const { application } = await response.json();
   assert.equal(application.version, 4); assert.equal(application.fieldReviews[section].status, 'ACCEPTED');
   assert.equal(application.events[0].action, 'REVIEW'); assert.equal(application.documents[0].pathname, undefined);
-  assert.deepEqual(f.counts(), { snapshots: 2, writes: 3, mails: 0 });
+  assert.deepEqual(f.counts(), { snapshots: 1, writes: 3, mails: 0 });
 });
 
 test('document decisions return their new status immediately without sending an email', async () => {
@@ -74,7 +74,7 @@ test('document decisions return their new status immediately without sending an 
   const { application } = await response.json();
   assert.equal(application.documents[0].status, 'NEEDS_CORRECTION');
   assert.equal(application.events[0].details.documentId, 'document');
-  assert.deepEqual(f.counts(), { snapshots: 2, writes: 4, mails: 0 });
+  assert.deepEqual(f.counts(), { snapshots: 1, writes: 4, mails: 0 });
 });
 
 test('stale versions, another reviewer, banned applicants and expired documents still block writes', async () => {
