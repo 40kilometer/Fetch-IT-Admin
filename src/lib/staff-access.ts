@@ -17,9 +17,9 @@ export async function currentStaff(permission?: Permission) {
   if (session.demo) {
     const controller=await getDemoController();
     if(!controller||controller.grant.uid!==session.demo.uid||controller.grant.sid!==session.demo.sid)return null;
-    return {...user,demo:{controllerName:controller.user.name,expiresAt:new Date(controller.grant.exp).toISOString()}};
+    return {...user,sessionExpiresAt:new Date(Math.min(session.exp,live.expiresAt.getTime())).toISOString(),demo:{controllerName:controller.user.name,expiresAt:new Date(controller.grant.exp).toISOString()}};
   }
-  return {...user,demo:null};
+  return {...user,sessionExpiresAt:new Date(Math.min(session.exp,live.expiresAt.getTime())).toISOString(),demo:null};
 }
 export async function requireStaffPage(permission?: Permission) {
   const staff=await currentStaff(); if(!staff) redirect('/login');

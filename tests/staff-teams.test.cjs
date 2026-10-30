@@ -34,7 +34,7 @@ function fixture(role = "ADMIN", options = {}) {
     const native = mod.require.bind(mod);
     mod.require = name => {
       if (name === "@/lib/db" || name === "./db") return { db };
-      if (name === "./session") return { getAdminSession: async () => ({ uid: staff.id, sid: "fixture-session", iat: Date.now() }) };
+      if (name === "./session") return { getAdminSession: async () => ({ uid: staff.id, sid: "fixture-session", exp: Date.now()+60000, iat: Date.now() }) };
       if (name === "next/link") return { __esModule: true, default: ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children) };
       if(name === "./staff-demo") return {getDemoController:async()=>null};
       if (name === "next/navigation") return {

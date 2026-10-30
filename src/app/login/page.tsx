@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { announceStaffSessionChange } from "@/lib/staff-session-sync";
+import { staffReturnPath } from "@/lib/staff-return-path";
 import { PASSWORD_REQUIREMENT } from "@/lib/staff-password-policy";
 import { useLocalDemo } from '@/hooks/use-local-demo';
 export default function LoginPage() {
@@ -33,7 +34,7 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/" + route, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, challengeId, code }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed. Please retry.");
-      if (mode === "login") { announceStaffSessionChange(); window.location.assign("/dashboard"); }
+      if (mode === "login") { announceStaffSessionChange(); window.location.assign(staffReturnPath(new URLSearchParams(window.location.search).get("next"))); }
       else if (mode === "send") { setChallengeId(data.challengeId); setMode("reset"); setPassword(""); setCode(""); setNotice(data.message); }
       else { setMode("login"); setPassword(""); setCode(""); setChallengeId(""); setNotice(data.message); }
     } catch (error) { setError(error instanceof Error ? error.message : "Service unavailable. Please retry."); }

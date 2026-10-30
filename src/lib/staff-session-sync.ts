@@ -4,7 +4,7 @@ export function announceStaffSessionChange() {
   try { localStorage.setItem(STAFF_SESSION_CHANGED, `${Date.now()}:${Math.random()}`); } catch { /* Focus checks also cover unavailable storage. */ }
 }
 
-export function watchStaffSession(identity: { id: string; role: string }, navigate: (url: string) => void) {
+export function watchStaffSession(identity: { id: string; role: string }, navigate: (url: string) => void, status?: (value:{expired:boolean;expiresAt?:string})=>void) {
   let stopped = false, pending = false, leaving = false;
   const abort = new AbortController();
   async function check() {
@@ -13,9 +13,10 @@ export function watchStaffSession(identity: { id: string; role: string }, naviga
     try {
       const response = await fetch("/api/auth/session", { cache: "no-store", signal: abort.signal });
       if (stopped) return;
-      if (response.status === 401) { leaving = true; navigate("/login"); return; }
+      if (response.status === 401) { if(status)status({expired:true});else{leaving = true; navigate("/login");} return; }
       if (!response.ok) return; // A temporary outage must not log out a valid user.
       const current = await response.json();
+      if(!stopped)status?.({expired:false,expiresAt:current.expiresAt});
       if (!stopped && (current.id !== identity.id || current.role !== identity.role)) {
         leaving = true; navigate("/dashboard/workspace");
       }

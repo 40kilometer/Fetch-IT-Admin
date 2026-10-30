@@ -10,8 +10,10 @@ import { isStaffNavActive, staffNavigation, teamForRole, teamHome } from "@/lib/
 import { StaffSessionReturn } from "@/components/staff-demo";
 import { isDemoStaffAccount } from "@/lib/staff-demo-roles";
 import { watchStaffSession } from "@/lib/staff-session-sync";
+import { StaffDraftAccount, StaffDraftGuard, allowStaffAccountReload } from "@/components/staff-drafts";
 export function AdminShell({ admin, children }: { admin: { id: string; name: string; email: string; role: string; demo?: { controllerName: string; expiresAt: string } | null }; children: React.ReactNode }) {
   const pathname = usePathname(), search = useSearchParams(), router = useRouter(), sidebar = useRef<HTMLElement>(null);
+  const [sessionNotice,setSessionNotice]=useState("");
   const [open, setOpen] = useState(false), [refreshing, startTransition] = useTransition();
   const operations = hasPermission(admin.role, "operations");
   const groups = staffNavigation(admin.role), ownTeam = teamForRole(admin.role);
@@ -20,7 +22,7 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
   const currentLink = currentGroup?.links.find(link => active(link.href));
   const section = pathname === "/dashboard/account" ? "My account" : currentLink ? `${currentGroup?.team ? currentGroup.label + " / " : ""}${currentLink.label}` : "Staff portal";
   const query = search.toString();
-  useEffect(() => watchStaffSession(admin, url => window.location.replace(url)), [admin.id, admin.role, pathname, query]);
+  useEffect(() => watchStaffSession(admin, url => {allowStaffAccountReload();window.location.replace(url);}, value=>setSessionNotice(value.expired?"expired":value.expiresAt && new Date(value.expiresAt).getTime()-Date.now()<=300000?"soon":"")), [admin.id, admin.role, pathname, query]);
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow;
@@ -39,7 +41,7 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
     window.addEventListener("keydown", keydown); media.addEventListener("change", resize);
     return () => { document.body.style.overflow = overflow; window.removeEventListener("keydown", keydown); media.removeEventListener("change", resize); previous?.focus(); };
   }, [open]);
-  return <div className="admin-shell">{open && <button className="sidebar-backdrop" aria-label="Close navigation" tabIndex={-1} onClick={() => setOpen(false)} />}
+  return <StaffDraftAccount.Provider value={`${admin.id}:${admin.role}`}><StaffDraftGuard/><div className="admin-shell">{open && <button className="sidebar-backdrop" aria-label="Close navigation" tabIndex={-1} onClick={() => setOpen(false)} />}
     <aside ref={sidebar} className={`admin-sidebar ${open ? "is-open" : ""}`} id="admin-navigation" role={open ? "dialog" : undefined} aria-modal={open || undefined} aria-label="Staff navigation">
       <div className="sidebar-brand-row"><Link href={operations ? "/dashboard" : ownTeam ? teamHome(ownTeam) : "/dashboard/workspace"} className="admin-brand" onClick={() => setOpen(false)}><img src="/fetch-logo-final.png" width="42" height="42" alt="" /><span>Fetch-It<small>STAFF PORTAL</small></span></Link>{open && <button className="btn icon-button mobile-menu" onClick={() => setOpen(false)} aria-label="Close navigation">×</button>}</div>
 
@@ -49,6 +51,6 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
       })}</nav>
       <details className="sidebar-account"><summary><span className="account-role">{ROLE_LABELS[admin.role]}</span><span className="muted small">{admin.email}</span></summary><p>{admin.name}</p><Link className="sidebar-link" href="/dashboard/account" onClick={() => setOpen(false)}><AdminIcon name="account" />My account</Link>{admin.demo && <StaffSessionReturn />}{(operations || admin.demo || isDemoStaffAccount(admin)) && <Link href="/staff" className="btn staff-switch-button" onClick={() => setOpen(false)}><AdminIcon name="team" />Switch staff</Link>}<LogoutButton /></details>
     </aside>
-    <div className="admin-workspace" inert={open || undefined}><a className="skip-link" href="#main-content">Skip to content</a><header className="admin-header"><div className="header-start"><button className="btn icon-button mobile-menu" aria-label="Open navigation" aria-expanded={open} aria-controls="admin-navigation" onClick={() => setOpen(true)}><AdminIcon name="menu" /></button><span className="header-section">{section}</span></div><div className="header-actions"><button className="btn refresh-dashboard" disabled={refreshing} aria-label={refreshing ? "Refreshing dashboard" : "Refresh dashboard"} onClick={() => startTransition(() => router.refresh())}><AdminIcon name="refresh" /><span>{refreshing ? "Refreshing…" : "Refresh"}</span></button><AdminInbox adminId={admin.id} /><Link className="admin-avatar" href="/dashboard/account" aria-label={`My account: ${admin.name}`}>{admin.name.slice(0, 1).toUpperCase()}</Link></div></header><main id="main-content" tabIndex={-1} className="admin-main">{children}</main><footer className="admin-footer">Fetch-It Staff Portal · Delivery &amp; Ride</footer></div>
-  </div>;
+    <div className="admin-workspace" inert={open || undefined}><a className="skip-link" href="#main-content">Skip to content</a><header className="admin-header"><div className="header-start"><button className="btn icon-button mobile-menu" aria-label="Open navigation" aria-expanded={open} aria-controls="admin-navigation" onClick={() => setOpen(true)}><AdminIcon name="menu" /></button><span className="header-section">{section}</span></div><div className="header-actions"><button className="btn refresh-dashboard" disabled={refreshing} aria-label={refreshing ? "Refreshing dashboard" : "Refresh dashboard"} onClick={() => startTransition(() => router.refresh())}><AdminIcon name="refresh" /><span>{refreshing ? "Refreshing…" : "Refresh"}</span></button><AdminInbox adminId={admin.id} /><Link className="admin-avatar" href="/dashboard/account" aria-label={`My account: ${admin.name}`}>{admin.name.slice(0, 1).toUpperCase()}</Link></div></header>{sessionNotice && <div className="session-notice" role="alert"><strong>{sessionNotice === "expired" ? "Your session has expired." : "Your session expires soon."}</strong><p>{sessionNotice === "expired" ? "Your text stays here, but saving requires sign-in. Saved drafts can be restored after you sign in to this account." : "Finish saving your work or sign in again. Local drafts stay available on this browser."}</p><a className="btn" href={`/login?next=${encodeURIComponent(pathname+(query?"?"+query:""))}`}>Sign in again</a></div>}<main id="main-content" tabIndex={-1} className="admin-main">{children}</main><footer className="admin-footer">Fetch-It Staff Portal · Delivery &amp; Ride</footer></div>
+  </div></StaffDraftAccount.Provider>;
 }
