@@ -4,18 +4,20 @@ const fs=require('node:fs');
 const path=require('node:path');
 const Module=require('node:module');
 const ts=require('typescript');
-const root=path.resolve(__dirname,'../../fetch-customer');
+const root=path.resolve(__dirname,'..');
 const cache=new Map();
 function load(relative){
   const filename=path.resolve(root,relative);if(cache.has(filename))return cache.get(filename).exports;
   const mod=new Module(filename,module);mod.filename=filename;mod.paths=Module._nodeModulePaths(path.dirname(filename));cache.set(filename,mod);
   const original=mod.require.bind(mod);
-  mod.require=name=>name.startsWith('@/')?load('src/'+name.slice(2)+'.ts'):name.startsWith('.')?load(path.relative(root,path.resolve(path.dirname(filename),name+'.ts'))):original(name);
+  const quoteRoot=path.resolve(process.env.CUSTOMER_APP_PATH||path.resolve(root,'../fetch-customer'));
+  mod.require=name=>name.startsWith('@/')?load(path.resolve(filename.startsWith(quoteRoot+path.sep)?quoteRoot:root,'src',name.slice(2)+'.ts')):name.startsWith('.')?load(path.relative(root,path.resolve(path.dirname(filename),name+'.ts'))):original(name);
   mod._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,filename);
   return mod.exports;
 }
 const {defaultPlatformSettings,validatePlatformSettings,configuredSurge}=load('src/lib/platform-policy.ts');
-const {quoteFare,quoteRideFare}=load('src/lib/fare.ts');
+const customerRoot=process.env.CUSTOMER_APP_PATH || path.resolve(root,'../fetch-customer');
+const fareFile=path.join(customerRoot,'src/lib/fare.ts');
 const {hasPermission,supportScope,caseScope}=load('src/lib/staff-policy.ts');
 test('staff permissions preserve owner-only capabilities and specialist boundaries',()=>{
   assert(hasPermission('ADMIN','operations'));
@@ -29,16 +31,17 @@ test('staff permissions preserve owner-only capabilities and specialist boundari
 });
 test('support and reviewer scopes do not expose another team or agent',()=>{
   assert.deepEqual(supportScope({id:'agent',role:'SUPPORT'}),{OR:[{assignedAdminId:'agent'},{assignedAdminId:null}]});
-  assert.deepEqual(caseScope({id:'reviewer',role:'FINANCE'}).kind.in,['FINANCE']);
-  assert.deepEqual(caseScope({id:'reviewer',role:'SAFETY'}).kind.in,['SAFETY']);
-  assert.deepEqual(caseScope({id:'supervisor',role:'SUPPORT_SUPERVISOR'}).kind.in,['ESCALATION']);
+  assert(!hasPermission('FINANCE','finance'));
+  assert.equal(caseScope({id:'reviewer',role:'SAFETY'}).kind,'SAFETY');
+  assert.deepEqual(caseScope({id:'supervisor',role:'SUPPORT_SUPERVISOR'}).OR,[{kind:'ESCALATION'},{createdById:'supervisor'}]);
 });
 test('invalid or incomplete financial/service settings cannot be saved',()=>{
   for(const change of [{commissionPercent:101},{offerSeconds:29},{offerSeconds:30.5},{vehicles:[]},{rideEnabled:'yes'},{maxSurge:Infinity},{extraCapability:true}])assert.throws(()=>validatePlatformSettings({...defaultPlatformSettings(),...change}));
   const settings=defaultPlatformSettings();settings.fares.TRICYCLE.perKm=-1;assert.throws(()=>validatePlatformSettings(settings));
   assert.deepEqual(validatePlatformSettings(defaultPlatformSettings()),defaultPlatformSettings());
 });
-test('saved prices affect new ride and delivery quotes without mutating an earlier quote',()=>{
+test('saved prices affect new ride and delivery quotes without mutating an earlier quote',{skip:!fs.existsSync(fareFile)&&'Set CUSTOMER_APP_PATH to include the Customer quote integration'},()=>{
+  const {quoteFare,quoteRideFare}=load(fareFile);
   const input={pickup:{lat:16.03,lng:120.23},dropoff:{lat:16.05,lng:120.25},vehicleClass:'TRICYCLE',cargoWeightKg:0,when:new Date('2026-10-19T04:00:00Z')};
   const settings=defaultPlatformSettings();const original=quoteFare({...input,settings});const recorded=original.fare.totalFare;
   settings.fares.TRICYCLE.baseFare+=100;

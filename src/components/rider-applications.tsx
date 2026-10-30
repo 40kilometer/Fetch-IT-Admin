@@ -28,6 +28,7 @@ export function RiderApplications({ id, initialStatus = "" }: { id?: string; ini
   const lab = useLocalDemo();
   const [stage,setStage]=useState(""),[notice,setNotice]=useState("");
   const mutationVersion = useRef(0);
+  const mutationPending = useRef(false);
   const requestSequence = useRef(0);
   const [feedback, setFeedback] = useState("");
   const [data, setData] = useState<State>({}), [error, setError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true);
@@ -74,6 +75,8 @@ export function RiderApplications({ id, initialStatus = "" }: { id?: string; ini
   }, [id, searchText, query, resetQueue]);
   useVisiblePoll(!busy && !loading ? requestKey : '', signal => load(true, signal), 10000, false);
   async function action(body: Record<string, unknown>) {
+    if (mutationPending.current) return false;
+    mutationPending.current = true;
     mutationVersion.current++;
     setBusy(true); setError(""); setFeedback("");
     try {
@@ -84,7 +87,7 @@ export function RiderApplications({ id, initialStatus = "" }: { id?: string; ini
       if(body.action === "assessment")setStage("decision");
       if (body.action !== "preview") setFeedback(typeof result.message === "string" ? result.message : ({review:"Item review saved.",claim:"Application assigned to you.",corrections:"Correction request saved. Check email history for delivery status.",schedule:"Orientation saved. Check email history for invitation delivery.",activate:"Service access updated.",assessment:"Assessment saved.",recommend:"Recommendation submitted.",reject:"Rejection recorded."} as Record<string,string>)[String(body.action)] || "Change saved successfully.");
       return true;
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not save this review."); return false; } finally { setBusy(false); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not save this review."); return false; } finally { mutationPending.current = false; setBusy(false); }
   }
   const app = data.application, canApprove = data.actor?.canActivate, admin = data.actor?.canManage;
   const orientation = () => ({ orientationAt: schedule.date ? new Date(schedule.date + "+08:00").toISOString() : "", venue: schedule.venue, instructions: schedule.instructions });

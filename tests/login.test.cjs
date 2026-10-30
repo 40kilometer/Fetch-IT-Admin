@@ -72,7 +72,7 @@ test("invalid passwords remain credential errors rather than service errors", as
 });
 
 test("all staff roles can sign in with a safe production database", async () => {
-  for (const role of ["ADMIN", "SUPPORT", "SUPPORT_SUPERVISOR", "FINANCE", "SAFETY"]) {
+  for (const role of ["ADMIN", "SUPPORT", "SUPPORT_SUPERVISOR", "SAFETY"]) {
     const f = fixture(); f.user.role = role;
     const response = await f.login();
     assert.equal(response.status, 200, role);

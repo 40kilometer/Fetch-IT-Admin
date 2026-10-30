@@ -106,6 +106,21 @@ function elements(tree) {
 }
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
+test('rapid application actions send one request, retain the committed snapshot and unlock after failure',async()=>{
+ const original=global.fetch,h=hooks(),pending=deferred(),initial=fixture().app;let posts=0;
+ global.fetch=async(url,options)=>{if(options?.method==='POST'){posts++;return pending.promise}return Response.json({application:initial,actor:{id:'reviewer',canActivate:true}})};
+ try{
+  const Parent=loader({react:h.react,'next/link':{},'@/hooks/use-local-demo':{useLocalDemo:()=>({enabled:false})},'@/hooks/use-visible-poll':{useVisiblePoll(){}}})('src/components/rider-applications.tsx').RiderApplications;
+  h.render(Parent,{id:initial.id});h.effects[0]();await new Promise(setImmediate);
+  const getAction=()=>elements(h.render(Parent,{id:initial.id})).find(e=>e.type?.name==='ApplicationChecklist').props.onAction;
+  const action=getAction(),first=action({action:'review',section:'personal',status:'ACCEPTED'});
+  assert.equal(await action({action:'review',section:'personal',status:'ACCEPTED'}),false);assert.equal(posts,1);
+  pending.resolve(Response.json({error:'Session expired. Sign in again.'},{status:401}));assert.equal(await first,false);
+  let savedBody;global.fetch=async(url,options)=>{posts++;savedBody=JSON.parse(options.body);return Response.json({application:{...initial,version:initial.version+1}})};
+  assert.equal(await getAction()({action:'review',section:'personal',status:'ACCEPTED'}),true);assert.equal(posts,2);assert.equal(savedBody.version,initial.version);
+ }finally{global.fetch=original}
+});
+
 test('the client finishes after POST, avoids a trailing GET, and ignores a stale poll arriving after the save', async () => {
   const h = hooks(), initial = fixture().app, post = deferred(), stale = deferred();
   let poll, gets = 0, posts = 0;

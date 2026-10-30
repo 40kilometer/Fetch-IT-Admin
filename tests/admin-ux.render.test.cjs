@@ -19,7 +19,7 @@ function loader(db) {
       if (name === "@/lib/admin-access") return { requireAdminPage: async () => staff };
       if (name === "@/lib/staff-access") return { requireStaffPage: async () => staff };
       if (name === "next/link") return { __esModule: true, default: ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children) };
-      if (name === "next/navigation") return { notFound() { throw Error("not found"); } };
+      if (name === "next/navigation") return { notFound() { throw Error("not found"); }, useRouter:()=>({refresh(){},push(){}}) };
       if (name.endsWith("action-form")) return { ActionForm: ({ label }) => React.createElement("button", null, label) };
       if (name.endsWith("reply-form")) return { ReplyForm: () => null };
       if (name.endsWith("ban-button")) return { BanButton: () => null };
@@ -62,14 +62,14 @@ test("directory page beyond the end is clamped and search filters remain in link
 
 test("case screens show the next valid action and hide self approval and terminal actions", async () => {
   const record = { id: "case", title: "Review", kind: "FINANCE", summary: "Facts", priority: "HIGH", status: "AWAITING_ADMIN", createdById: "admin", createdByName: "Test admin", assignedToId: "admin", notes: [], version: 2, bookingId: null };
-  const db = { workflowCase: { findFirst: async () => record }, user: { findMany: async () => [], findUnique: async () => ({ name: "Reviewer" }) } };
+  const db = { workflowNote:{count:async()=>0,findMany:async()=>[]},workflowCase: { findFirst: async () => record }, user: { findMany: async () => [], findUnique: async () => ({ name: "Reviewer" }) } };
   const Page = loader(db)("src/app/dashboard/cases/[id]/page.tsx").default;
-  async function render() { return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "case" }) })); }
+  async function render() { return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "case" }),searchParams:Promise.resolve({}) })); }
   let html = await render();
-  assert(html.includes("Waiting for a different administrator")); assert(!html.includes(">Record decision<")); assert(!html.includes(">Submit recommendation<"));
+  assert(html.includes("A different Admin must decide")); assert(!html.includes(">Approve recommendation<")); assert(!html.includes(">Request Admin decision<"));
   record.createdById = "creator"; record.assignedToId = "reviewer";
-  html = await render(); assert(html.includes(">Record decision<")); assert(!html.includes(">Record resolution and close case<"));
+  html = await render(); assert(html.includes(">Approve recommendation<")); assert(!html.includes(">Record resolution<"));
   record.status = "RESOLVED"; record.assignedToId = null;
   html = await render();
-  for (const label of ["Claim case", "Assign reviewer", "Append evidence", "Submit recommendation", "Record decision", "Record resolution and close case"]) assert(!html.includes(">" + label + "<"), label);
+  for (const label of ["Start review", "Assign reviewer", "Save internal note", "Request Admin decision", "Approve recommendation", "Record resolution"]) assert(!html.includes(">" + label + "<"), label);
 });

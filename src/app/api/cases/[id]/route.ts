@@ -43,7 +43,7 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}
         await tx.workflowNote.create({data:{caseId:id,authorId:staff.id,authorName:staff.name,body:`Resolution: ${text(body.reason,4000)}`}});data={...data,status:'RESOLVED'};
       } else throw new StaffError('You cannot perform this action.',403);
       const updated=await tx.workflowCase.update({where:{id},data});
-      await tx.adminAudit.create({data:{actorId:staff.id,actorName:staff.name,action:`CASE_${String(body.action).toUpperCase()}`,entityType:'CASE',entityId:id,details:{from:record.status,to:updated.status,assignedToId:updated.assignedToId}}});return updated;
+      await tx.adminAudit.create({data:{actorId:staff.id,actorName:staff.name,action:`CASE_${String(body.action).toUpperCase()}`,entityType:'CASE',entityId:id,details:{from:record.status,to:updated.status,assignedToId:updated.assignedToId,...(typeof data.decision==='string'?{reason:data.decision}:{}),...(typeof data.recommendation==='string'?{recommendation:data.recommendation}:{}),...(body.action==='close'?{reason:text(body.reason,4000)}:{}),...(body.action==='note'?{note:text(body.note,4000)}:{})}}});return updated;
     });
     return NextResponse.json({message:result.status==='APPROVED'?'Recommendation approved. Perform any permitted intervention on the booking/account page, then record the resolution.':'Case updated.'});
   })(req);
