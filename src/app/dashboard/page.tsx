@@ -1,3 +1,4 @@
+import { expireRiderOffers } from "@/lib/dispatch";
 import { DemoActivityNotice, RiderApplicationSummary } from "@/components/overview-onboarding";
 import { db } from "@/lib/db";
 import { requireAdminPage } from "@/lib/admin-access";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/admin-ui";
 import { DashboardCharts, type DayPoint } from "./dashboard-charts";
 export default async function OverviewPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const staff = await requireAdminPage();
+  await expireRiderOffers(db);
   const now = new Date(), period = overviewPeriod(queryValue(await searchParams, "period"), now), createdAt = { gte: period.since, lte: period.until };
   const [totalBookings, deliveryBookings, rideBookings, activeBookings, totalCustomers, totalRiders, onlineRiders, fares, recentBookings, statusGroups, vehicleGroups, unassigned, stalled, support] = await Promise.all([
     db.booking.count({ where: { createdAt } }), db.booking.count({ where: { createdAt, type: "DELIVERY" } }), db.booking.count({ where: { createdAt, type: "RIDE" } }),
