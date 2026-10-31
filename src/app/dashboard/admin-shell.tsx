@@ -11,6 +11,7 @@ import { StaffSessionReturn } from "@/components/staff-demo";
 import { isDemoStaffAccount } from "@/lib/staff-demo-roles";
 import { watchStaffSession } from "@/lib/staff-session-sync";
 import { StaffDraftAccount, StaffDraftGuard, allowStaffAccountReload, confirmStaffNavigation } from "@/components/staff-drafts";
+import {sidebarFocusTargets} from "@/lib/sidebar-focus";
 export function AdminShell({ admin, children }: { admin: { id: string; name: string; email: string; role: string; demo?: { controllerName: string; expiresAt: string } | null }; children: React.ReactNode }) {
   const pathname = usePathname(), search = useSearchParams(), router = useRouter(), sidebar = useRef<HTMLElement>(null);
   const [sessionNotice,setSessionNotice]=useState("");
@@ -27,9 +28,11 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null, overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const focusable = () => Array.from(sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), summary, [tabindex="0"]') ?? []).filter(element => element.getClientRects().length);
+    const focusable = () => sidebarFocusTargets(sidebar.current);
     focusable()[0]?.focus();
     function keydown(event: KeyboardEvent) {
+      // Native modal dialogs manage their own focus; the drawer must not steal it.
+      if(event.defaultPrevented||document.querySelector('dialog[open]'))return;
       if (event.key === "Escape") setOpen(false);
       if (event.key === "Tab") {
         const nodes = focusable(), first = nodes[0], last = nodes[nodes.length - 1];

@@ -15,6 +15,6 @@ Application detail components are keyed by record ID to prevent form state carry
 - **164 automated tests passed.** New checks cover selection/empty-value recovery, reverting/committing baselines, link/refresh/Back dialog cancellation and continuation, event cleanup, unsupported traversal, support status/assignment retained across conflicts and refresh, service choices after failure and filtering already-active services, and orientation fields after a rejected save.
 - TypeScript and the production webpack build passed.
 - The built portal is smoke-checked over HTTP with an existing staff account, including session cleanup and authorization boundaries. No business action or outbound email/push message is submitted.
-- Visual browser interaction could not be run because local browser use is disabled in Work settings. Dialog behavior is verified through the real component handlers in automated tests; visual/real-browser Back and Forward checks remain an explicit verification limit.
+- Visual browser interaction was initially unavailable. The [31 October browser walkthrough](browser-audit-2026-10-31.md) subsequently verified mobile/desktop presentation, draft dialogs, recovery and Back/Forward behavior using the actual staff identities. Universal traversal cancellation remains browser-dependent.
 
 Platform references: installed Next.js 16.3.5 `use-router` documentation and the [HTML navigation APIs standard](https://html.spec.whatwg.org/dev/nav-history-apis.html).
