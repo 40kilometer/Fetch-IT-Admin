@@ -1,3 +1,4 @@
+import { dispatchSelect, freshPresenceWhere } from '@/lib/matching-policy';
 import { requireAdminPage } from "@/lib/admin-access";
 import { humanize } from "@/lib/admin-ui";
 import { BookingControls } from "./booking-controls";
@@ -28,7 +29,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const booking = await db.booking.findUnique({
     where: { id },
-    include: { deliveryProofs: { orderBy: { createdAt: "desc" } }, paymentEvents: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 50 }, customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+    include: { dispatch: { select: { ...dispatchSelect, lastReason: true } }, deliveryProofs: { orderBy: { createdAt: "desc" } }, paymentEvents: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 50 }, customer: true, rider: { select: riderSelect }, events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
   });
   if (!booking) notFound();
 
@@ -36,7 +37,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const isRide = booking.type === "RIDE";
   const demo = isDemoPayment(booking.paymentMethod);
   const canAssign = ["PENDING", "MATCHED", "ACCEPTED"].includes(booking.status) && !booking.pickedUpAt && (demo ? booking.paymentStatus === "PAID" : !booking.customerPaidAt && !booking.riderReceivedAt && !["PAID", "REFUNDED"].includes(booking.paymentStatus)) && (!booking.scheduledAt || booking.scheduledAt <= new Date());
-  const riders = canAssign ? await db.user.findMany({ where: { role: "RIDER", isBanned: false, id: { not: booking.riderId ?? "" }, riderProfile: { vehicleClass: booking.vehicleClass }, riderPresence: { isOnline: true, updatedAt: { gte: new Date(Date.now() - 5 * 60_000) } }, bookingsAsRider: { none: { status: { in: ["MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
+  const riders = canAssign ? await db.user.findMany({ where: { role: "RIDER", isBanned: false, id: { not: booking.riderId ?? "" }, riderProfile: { vehicleClass: booking.vehicleClass }, riderPresence: freshPresenceWhere(), bookingsAsRider: { none: { status: { in: ["MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
 
   return (
     <div>
@@ -62,6 +63,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <BookingTimeline booking={booking} />
+      {booking.dispatch && <section className="card" style={{padding:20,marginBottom:20}}><h2>Automatic matching</h2><Row label="Progress" value={booking.dispatch.phase==='OFFERED'?'Exclusive offer awaiting acceptance':booking.dispatch.phase==='SEARCHING'?'Checking nearby riders':booking.dispatch.phase==='OPEN'?'Released to open requests':'Matching finished / manual dispatch'}/><Row label="Offers sent" value={String(booking.dispatch.attempts)}/>{booking.dispatch.pickupEtaSeconds!==null && <Row label="Estimated pickup travel time" value={Math.max(1,Math.ceil(booking.dispatch.pickupEtaSeconds/60))+' min · no live traffic'}/>}<p className="muted">{booking.dispatch.lastReason}</p></section>}
       <DeliveryProofPhotos bookingId={booking.id} proofs={booking.deliveryProofs} />
       {booking.events.length > 0 && <section className="card" style={{ padding: 20, marginBottom: 20 }}>
         <h2 style={{ fontSize: 15 }}>Booking history</h2>
