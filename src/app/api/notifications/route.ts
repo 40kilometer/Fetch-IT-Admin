@@ -26,7 +26,7 @@ export async function GET() {
           AND ("customerPaidAmount" <> "totalFare" OR "riderReceivedAmount" <> "totalFare")
         ORDER BY "updatedAt" DESC LIMIT 30` : [],
       support ? db.supportTicket.findMany({ where: { AND: [supportScope(staff), { status: { not: "RESOLVED" } }] },
-        select: { id: true, category: true, createdAt: true, lastCustomerMessageAt: true, lastAdminReplyAt: true, booking: { select: { refCode: true } } }, orderBy: { lastCustomerMessageAt: "desc" }, take: 100 }) : [],
+        select: { id: true, message: true, priority: true, category: true, createdAt: true, lastCustomerMessageAt: true, lastAdminReplyAt: true, booking: { select: { refCode: true } } }, orderBy: [{ priority: "desc" }, { lastCustomerMessageAt: "desc" }], take: 100 }) : [],
       operations ? db.riderApplication.findMany({ where: { status: { in: ["SUBMITTED", "IN_REVIEW", "FORCE_APPROVAL_PENDING"] } },
         select: { id: true, version: true, status: true, updatedAt: true, user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 30 }) : [],
     ]);
@@ -34,9 +34,9 @@ export async function GET() {
       ...cases.map(c => ({ id: `case:${c.id}:${c.version}`, title: operations && c.status === "AWAITING_ADMIN" && c.createdById !== staff.id && c.assignedToId !== staff.id ? `Awaiting Admin decision: ${c.title}` : c.title, detail: `${reviewLabel(c.kind)} · ${reviewLabel(c.status)}`, at: c.updatedAt.toISOString(), href: `/dashboard/cases/${c.id}` })),
       ...waiting.map(b => ({ id: `unassigned:${b.id}`, title: `${b.type === "RIDE" ? "Ride" : "Delivery"} needs a rider`, detail: `${b.refCode} · Waiting more than 5 minutes after pickup became due`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
       ...mismatches.map(b => ({ id: `payment:${b.id}:${b.updatedAt.toISOString()}`, title: "Cash payment needs review", detail: `${b.refCode} · Confirmed amounts do not match the fare`, at: b.updatedAt.toISOString(), href: operations ? `/dashboard/bookings/${b.id}` : `/dashboard/finance?ref=${encodeURIComponent(b.refCode)}` })),
-      ...tickets.filter(t => !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
+      ...tickets.filter(t => (t.priority === "URGENT" && t.message.startsWith("SOS EMERGENCY ALERT\n")) || !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: (t.priority === "URGENT" && t.message.startsWith("SOS EMERGENCY ALERT\n")) ? "SOS emergency alert · Urgent" : t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
       ...applications.map(a => ({ id: `application:${a.id}:${a.version}`, title: a.status === "FORCE_APPROVAL_PENDING" ? "Force approval needs your decision" : "Rider application needs review", detail: a.user.name.replace(/^Demo · /, ""), at: a.updatedAt.toISOString(), href: `/dashboard/applications/${a.id}` })),
-    ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100);
+    ].sort((a, b) => Number(b.title.startsWith("SOS emergency")) - Number(a.title.startsWith("SOS emergency")) || b.at.localeCompare(a.at)).slice(0, 100);
     return NextResponse.json({ items, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "Notifications are unavailable. Please retry." }, { status: 503 }); }
 }
