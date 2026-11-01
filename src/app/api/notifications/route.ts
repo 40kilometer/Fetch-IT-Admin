@@ -1,3 +1,4 @@
+import { isSafetyAlert } from "@/lib/safety-alert";
 import {reviewLabel} from "@/lib/review-queue";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -34,9 +35,9 @@ export async function GET() {
       ...cases.map(c => ({ id: `case:${c.id}:${c.version}`, title: operations && c.status === "AWAITING_ADMIN" && c.createdById !== staff.id && c.assignedToId !== staff.id ? `Awaiting Admin decision: ${c.title}` : c.title, detail: `${reviewLabel(c.kind)} · ${reviewLabel(c.status)}`, at: c.updatedAt.toISOString(), href: `/dashboard/cases/${c.id}` })),
       ...waiting.map(b => ({ id: `unassigned:${b.id}`, title: `${b.type === "RIDE" ? "Ride" : "Delivery"} needs a rider`, detail: `${b.refCode} · Waiting more than 5 minutes after pickup became due`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
       ...mismatches.map(b => ({ id: `payment:${b.id}:${b.updatedAt.toISOString()}`, title: "Cash payment needs review", detail: `${b.refCode} · Confirmed amounts do not match the fare`, at: b.updatedAt.toISOString(), href: operations ? `/dashboard/bookings/${b.id}` : `/dashboard/finance?ref=${encodeURIComponent(b.refCode)}` })),
-      ...tickets.filter(t => (t.priority === "URGENT" && t.message.startsWith("SOS EMERGENCY ALERT\n")) || !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: (t.priority === "URGENT" && t.message.startsWith("SOS EMERGENCY ALERT\n")) ? "SOS emergency alert · Urgent" : t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
+      ...tickets.filter(t => isSafetyAlert(t.message, t.priority) || !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: isSafetyAlert(t.message, t.priority) ? "Urgent safety alert" : t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
       ...applications.map(a => ({ id: `application:${a.id}:${a.version}`, title: a.status === "FORCE_APPROVAL_PENDING" ? "Force approval needs your decision" : "Rider application needs review", detail: a.user.name.replace(/^Demo · /, ""), at: a.updatedAt.toISOString(), href: `/dashboard/applications/${a.id}` })),
-    ].sort((a, b) => Number(b.title.startsWith("SOS emergency")) - Number(a.title.startsWith("SOS emergency")) || b.at.localeCompare(a.at)).slice(0, 100);
+    ].sort((a, b) => Number(b.title.startsWith("Urgent safety alert")) - Number(a.title.startsWith("Urgent safety alert")) || b.at.localeCompare(a.at)).slice(0, 100);
     return NextResponse.json({ items, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "Notifications are unavailable. Please retry." }, { status: 503 }); }
 }
