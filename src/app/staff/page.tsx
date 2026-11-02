@@ -1,5 +1,5 @@
-import { StaffAccountPicker } from "@/components/staff-demo";
+import { redirect } from "next/navigation";
 
 export default function StaffAccountsPage() {
-  return <main className="demo-page"><StaffAccountPicker /></main>;
+  redirect("/login");
 }

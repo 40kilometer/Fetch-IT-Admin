@@ -60,173 +60,64 @@ function fixture() {
   function request(method = 'GET', body, origin = 'https://fixture.invalid') {
     return new NextRequest('https://fixture.invalid/api/auth/demo', { method, headers: { ...(origin ? { origin } : {}), 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
   }
-  return { users, cookies, options, sessions, audit, state, session, access, demo, route, load, startAs, request, password, advance: ms => now += ms, now: () => now };
+  function legacySwitch() {
+    const parent=startAs();
+    const grant={uid:parent.uid,sid:parent.sid,iat:parent.iat,exp:now+3600000};
+    const value=Buffer.from(JSON.stringify(grant)).toString('base64url');
+    cookies.set('fetchit_staff_demo',value+'.'+crypto.createHmac('sha256',env.ADMIN_SESSION_SECRET).update('staff-demo:'+value).digest('base64url'));
+    const user=users.get('SAFETY');
+    const token=session.createAdminSessionToken({uid:user.id,email:user.email,name:user.name,demo:{uid:parent.uid,sid:parent.sid}},grant.exp);
+    const child=session.verifyAdminSessionToken(token);
+    sessions.set(child.sid,{id:child.sid,userId:user.id,revokedAt:null,expiresAt:new Clock(child.exp)});
+    cookies.set('fetchit_admin_session',token);
+    return {parent,child};
+  }
+  return { legacySwitch, users, cookies, options, sessions, audit, state, session, access, demo, route, load, startAs, request, password, advance: ms => now += ms, now: () => now };
 }
 
-test('anonymous demo page stays locked and cannot mint a staff session', async () => {
-  const f = fixture(), status = await f.route.GET(f.request());
-  assert.deepEqual(await status.json(), { unlocked: false, canStart: false, currentRole: null, expiresAt: null, controllerName: null, currentEmail: null, canUseAdmin: false });
-  assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
-  assert.equal(f.sessions.size, 0); assert.equal(f.cookies.size, 0);
-});
 
-test('ordinary staff cannot unlock demo access or elevate to Admin', async () => {
-  for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY']) {
-    const f = fixture(); f.users.get(role).email = "ordinary@fixture.invalid"; f.startAs(role);
-    assert.equal((await f.demo.demoStatus()).canStart, false);
-    assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
-    assert.equal(f.sessions.size, 1); assert.equal(f.cookies.has('fetchit_staff_demo'), false);
+for(const actor of [null,'ADMIN','SUPPORT','SUPPORT_SUPERVISOR','SAFETY'])test(`${actor??'Anonymous'} cannot switch accounts through the retired endpoint`,async()=>{
+  const f=fixture();if(actor)f.startAs(actor);
+  const before=f.sessions.size;
+  for(const method of ['GET','POST','DELETE']) {
+    const response=await f.route[method](f.request(method,method==='POST'?{role:'ADMIN'}:undefined));
+    assert.equal(response.status,410);assert.match((await response.json()).error,/sign in/i);
+  }
+  assert.equal(f.sessions.size,before);assert.equal(f.audit.length,0);assert.equal(f.cookies.has('fetchit_staff_demo'),false);
+});
+test('previously switched sessions are denied even with a valid controller grant',async()=>{
+  const f=fixture();f.legacySwitch();
+  assert.equal(await f.access.currentStaff(),null);
+  assert.equal(await f.access.currentStaff('safety'),null);
+});
+test('password sign-in closes legacy switching authority and creates a normal role-scoped session',async()=>{
+  const f=fixture(),{parent,child}=f.legacySwitch();
+  const response=await f.load('src/app/api/auth/login/route.ts').POST(new NextRequest('https://fixture.invalid/api/auth/login',{method:'POST',headers:{origin:'https://fixture.invalid','Content-Type':'application/json'},body:JSON.stringify({email:f.users.get('SUPPORT').email,password:f.password})}));
+  assert.equal(response.status,200);assert(f.sessions.get(parent.sid).revokedAt);assert(f.sessions.get(child.sid).revokedAt);
+  assert.equal(f.cookies.has('fetchit_staff_demo'),false);
+  assert.equal((await f.access.currentStaff('support')).id,'SUPPORT');
+  assert.equal(await f.access.currentStaff('operations'),null);assert.equal((await f.session.getAdminSession()).demo,undefined);
+});
+test('ordinary sign-in sessions retain permission, restriction and revocation checks',async()=>{
+  for(const role of ['ADMIN','SUPPORT','SUPPORT_SUPERVISOR','SAFETY']) {
+    const f=fixture(),session=f.startAs(role);assert.equal((await f.access.currentStaff()).id,role);
+    f.sessions.get(session.sid).revokedAt=new Date();assert.equal(await f.access.currentStaff(),null);
+    f.sessions.get(session.sid).revokedAt=null;f.users.get(role).isBanned=true;assert.equal(await f.access.currentStaff(),null);
+  }
+  const f=fixture();f.startAs('FINANCE');assert.equal(await f.access.currentStaff(),null);
+});
+test('logout cleans up both legacy sessions and clears cookies even on database failure',async()=>{
+  for(const fail of [false,true]) {
+    const f=fixture(),{parent,child}=f.legacySwitch();f.state.failTransaction=fail;
+    const response=await f.load('src/app/api/auth/logout/route.ts').POST(f.request('POST'));
+    assert.equal(response.status,fail?503:200);assert.equal(f.cookies.size,0);
+    if(!fail){assert(f.sessions.get(parent.sid).revokedAt);assert(f.sessions.get(child.sid).revokedAt);}
   }
 });
-
-test('designated real demo staff can unlock staff switching with their own account and can never switch into Admin', async () => {
-  for (const startingRole of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY']) {
-    const f = fixture(); f.startAs(startingRole);
-    const status = await f.demo.demoStatus(); assert.equal(status.canStart, true); assert.equal(status.canUseAdmin, false);
-    for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY']) {
-      assert.equal((await f.route.POST(f.request('POST', { role }))).status, 200);
-      const user = await f.access.currentStaff(); assert.equal(user.id, role); assert.equal(user.email, f.users.get(role).email); assert.equal(user.name, role);
-    }
-    assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 403);
-    assert.equal((await f.route.DELETE(f.request('DELETE'))).status, 200);
-    assert.equal((await f.access.currentStaff()).id, startingRole);
-    assert.equal(f.cookies.has('fetchit_staff_demo'), false);
+test('old staff picker URLs redirect to password sign-in',()=>{
+  const f=fixture();
+  for(const file of ['src/app/staff/page.tsx','src/app/demo/page.tsx']) {
+    // These pages contain no JSX; the fixture loader supports .tsx paths too.
+    const page=f.load(file);assert.throws(()=>Object.values(page)[0](),/redirect:\/login/);
   }
-});
-
-test('demo access cannot bypass the production database permission check', async () => {
-  const f = fixture(); f.startAs(); f.state.safe = false;
-  assert.equal((await f.route.POST(f.request('POST', { role: 'SUPPORT' }))).status, 503);
-  assert.equal(f.sessions.size, 1); assert.equal(f.cookies.has('fetchit_staff_demo'), false);
-});
-
-test('Admin unlocks every allowed role with sessions capped to the demo window', async () => {
-  const f = fixture(), parent = f.startAs();
-  assert.equal((await f.demo.demoStatus()).canStart, true);
-  for (const role of ['SUPPORT', 'SUPPORT_SUPERVISOR', 'SAFETY', 'ADMIN']) {
-    const response = await f.route.POST(f.request('POST', { role, userId: 'OTHER_ADMIN' }));
-    assert.equal(response.status, 200, role);
-    const user = await f.access.currentStaff();
-    assert.equal(user.id, role); assert.equal(user.role, role);
-    assert.equal(user.name, role);
-    assert.equal(user.demo.controllerName, 'ADMIN');
-    const child = await f.session.getAdminSession();
-    assert(child.exp <= f.now() + 60 * 60_000); assert.equal(child.demo.sid, parent.sid);
-    assert.equal(f.sessions.get(parent.sid).revokedAt, null);
-    assert.equal(f.options.get('fetchit_staff_demo').httpOnly, true); assert.equal(f.options.get('fetchit_staff_demo').secure, true);
-    assert.equal(f.options.get('fetchit_admin_session').httpOnly, true); assert.equal(f.options.get('fetchit_admin_session').secure, true);
-    assert(f.options.get('fetchit_admin_session').maxAge <= 3600);
-  }
-  assert.equal([...f.sessions.values()].filter(row => !row.revokedAt).length, 2, 'Only the controller and latest demo session remain active');
-  assert.equal(f.audit.filter(event => event.action === 'DEMO_ROLE_SWITCHED').length, 4);
-  assert(f.audit.every(event => event.actorId === 'ADMIN'));
-});
-
-test('staff permissions still apply inside an Admin-authorized demonstration', async () => {
-  const f = fixture(); f.startAs(); await f.demo.switchDemoRole('SUPPORT');
-  assert.equal(await f.access.currentStaff('operations'), null);
-  assert.equal(await f.access.currentStaff('finance'), null);
-  assert.equal(await f.access.currentStaff('safety'), null);
-  assert.equal((await f.access.currentStaff('support')).id, 'SUPPORT');
-});
-
-test('demo child cookies do not work without their controller grant', async () => {
-  const f = fixture(); f.startAs(); await f.demo.switchDemoRole('SAFETY');
-  f.cookies.delete('fetchit_staff_demo');
-  assert.equal(await f.access.currentStaff(), null);
-  assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401);
-});
-
-test('controller revocation, account restriction, password reset and role change end delegated access', async () => {
-  for (const change of ['revoke', 'ban', 'reset', 'role']) {
-    const f = fixture(), parent = f.startAs(); await f.demo.switchDemoRole('SAFETY');
-    if (change === 'revoke') f.sessions.get(parent.sid).revokedAt = new Date(f.now());
-    if (change === 'ban') f.users.get('ADMIN').isBanned = true;
-    if (change === 'reset') f.users.get('ADMIN').authInvalidBefore = new Date(f.now());
-    if (change === 'role') f.users.get('ADMIN').role = 'SUPPORT';
-    assert.equal(await f.access.currentStaff(), null, change);
-    assert.equal((await f.route.POST(f.request('POST', { role: 'ADMIN' }))).status, 401, change);
-  }
-});
-
-test('tampered, expired, and mismatched controller grants fail closed', async () => {
-  for (const change of ['tamper', 'expire', 'mismatch']) {
-    const f = fixture(); f.startAs(); await f.demo.switchDemoRole('SUPPORT');
-    if (change === 'tamper') f.cookies.set('fetchit_staff_demo', f.cookies.get('fetchit_staff_demo') + 'x');
-    if (change === 'expire') f.advance(60 * 60_000 + 1);
-    if (change === 'mismatch') {
-      const child = await f.session.getAdminSession();
-      const token = f.session.createAdminSessionToken({ uid: child.uid, email: child.email, name: child.name, demo: { uid: 'OTHER_ADMIN', sid: 'other-parent' } }, child.exp);
-      const payload = f.session.verifyAdminSessionToken(token);
-      f.sessions.set(payload.sid, { id: payload.sid, userId: child.uid, revokedAt: null, expiresAt: new Date(child.exp) });
-      f.cookies.set('fetchit_admin_session', token);
-    }
-    assert.equal(await f.access.currentStaff(), null, change);
-  }
-});
-
-test('missing, restricted, and reassigned demonstration accounts are not silently recreated', async () => {
-  for (const change of ['delete', 'ban', 'role']) {
-    const f = fixture(); f.startAs();
-    if (change === 'delete') f.users.delete('SAFETY');
-    if (change === 'ban') f.users.get('SAFETY').isBanned = true;
-    if (change === 'role') f.users.get('SAFETY').role = 'ADMIN';
-    assert.equal((await f.route.POST(f.request('POST', { role: 'SAFETY' }))).status, 409);
-    assert.equal(f.sessions.size, 1); assert.equal(f.cookies.has('fetchit_staff_demo'), false);
-  }
-});
-
-test('unsupported roles, cross-origin requests, and missing origins cannot switch sessions', async () => {
-  const f = fixture(); f.startAs();
-  assert.equal((await f.route.POST(f.request('POST', { role: 'SUPERADMIN' }))).status, 400);
-  for (const origin of ['https://other.invalid', '']) {
-    assert.equal((await f.route.POST(f.request('POST', { role: 'SUPPORT' }, origin))).status, 403);
-    assert.equal((await f.route.DELETE(f.request('DELETE', undefined, origin))).status, 403);
-  }
-  assert.equal(f.sessions.size, 1);
-});
-
-test('finishing restores normal Admin access without extending its original expiry', async () => {
-  const f = fixture(), parent = f.startAs(); await f.demo.switchDemoRole('SAFETY');
-  const child = await f.session.getAdminSession(); f.advance(10 * 60_000);
-  assert.equal((await f.route.DELETE(f.request('DELETE'))).status, 200);
-  const restored = await f.session.getAdminSession();
-  assert.equal(restored.uid, 'ADMIN'); assert.equal(restored.demo, undefined); assert(restored.exp <= parent.exp);
-  assert(f.sessions.get(parent.sid).revokedAt); assert(f.sessions.get(child.sid).revokedAt);
-  assert.equal(f.cookies.has('fetchit_staff_demo'), false);
-  assert.equal((await f.access.currentStaff('operations')).demo, null);
-});
-
-test('normal password sign-in closes the previous demo authority', async () => {
-  const f = fixture(), parent = f.startAs(); await f.demo.switchDemoRole('SAFETY');
-  const child = await f.session.getAdminSession();
-  const login = f.load('src/app/api/auth/login/route.ts').POST;
-  const response = await login(new NextRequest('https://fixture.invalid/api/auth/login', { method: 'POST', headers: { origin: 'https://fixture.invalid', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: f.users.get('SUPPORT').email, password: f.password }) }));
-  assert.equal(response.status, 200);
-  assert(f.sessions.get(parent.sid).revokedAt); assert(f.sessions.get(child.sid).revokedAt);
-  assert.equal(f.cookies.has('fetchit_staff_demo'), false);
-  assert.equal((await f.access.currentStaff()).id, 'SUPPORT');
-  assert.equal((await f.demo.demoStatus()).canStart, true);
-});
-
-test('logging out closes the demo grant and revokes both sessions', async () => {
-  const f = fixture(), parent = f.startAs(); await f.demo.switchDemoRole('SUPPORT');
-  const oldCookies = new Map(f.cookies), child = await f.session.getAdminSession();
-  const logout = f.load('src/app/api/auth/logout/route.ts').POST;
-  assert.equal((await logout(f.request('POST'))).status, 200);
-  assert.equal(f.cookies.size, 0); assert(f.sessions.get(parent.sid).revokedAt); assert(f.sessions.get(child.sid).revokedAt);
-  for (const [key, value] of oldCookies) f.cookies.set(key, value);
-  assert.equal(await f.access.currentStaff(), null); assert.equal(await f.demo.getDemoController(), null);
-});
-
-test('a cleanup failure still clears both browser authentication cookies', async () => {
-  const f = fixture(); f.startAs(); await f.demo.switchDemoRole('SUPPORT'); f.state.failTransaction = true;
-  const logout = f.load('src/app/api/auth/logout/route.ts').POST;
-  const response=await logout(f.request('POST'));assert.equal(response.status,503);assert.equal((await response.json()).signedOut,true);
-  assert.equal(f.cookies.size, 0);
-});
-
-test('retired Finance demo identity cannot authenticate, present, or be switched into',async()=>{
-  const f=fixture();f.startAs('FINANCE');assert.equal(await f.access.currentStaff(),null);assert.equal((await f.demo.demoStatus()).canStart,false);
-  f.startAs();assert.equal((await f.route.POST(f.request('POST',{role:'FINANCE'}))).status,400);
 });
