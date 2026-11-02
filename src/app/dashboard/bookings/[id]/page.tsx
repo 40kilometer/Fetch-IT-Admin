@@ -13,6 +13,7 @@ import { BOOKING_TYPE_LABEL, VEHICLE_LABEL } from "@/lib/constants";
 import { CancelButton } from "./cancel-button";
 import { BookingTimeline } from "../booking-timeline";
 import { DeliveryProofPhotos } from "@/components/delivery-proof-photos";
+import {PaymentRecordStatus} from '@/components/payment-record-status';
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -99,7 +100,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <Row label="Total" value={`₱${booking.totalFare.toFixed(2)} ${booking.currency}`} />
           <Row label="Payment method" value={PAYMENT_METHOD_LABEL[booking.paymentMethod]} />
           {demo && <><p className="muted small">Online entries are records only; these controls do not transfer funds.</p><Row label="Commission rate" value={`${(booking.demoCommissionBps ?? 0) / 100}%`} /><Row label="Commission" value={booking.demoCommission === null ? "After completion" : `₱${booking.demoCommission.toFixed(2)}`} /><Row label="Rider earnings" value={booking.demoRiderEarnings === null ? "After completion" : `₱${booking.demoRiderEarnings.toFixed(2)}`} /><Row label="Payout" value={booking.demoPayoutAt?.toLocaleString("en-PH", { timeZone: "Asia/Manila" }) ?? "Not recorded"} /><Row label="Payout reference" value={booking.demoPayoutReference ?? "—"} /></>}
-          <Row label="Payment status" value={PAYMENT_STATUS_LABEL[booking.paymentStatus]} />
+          <Row label="Payment status" value={<PaymentRecordStatus record={booking} />} />
           <Row label="Customer confirmation" value={booking.customerPaidAt ? `₱${booking.customerPaidAmount?.toFixed(2)} · ${booking.customerPaidAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}` : "Not yet confirmed"} />
           <Row label="Rider confirmation" value={booking.riderReceivedAt ? `₱${booking.riderReceivedAmount?.toFixed(2)} · ${booking.riderReceivedAt.toLocaleString("en-PH", { timeZone: "Asia/Manila" })}` : "Not yet confirmed"} />
           <Row label="Paid at" value={booking.paidAt?.toLocaleString("en-PH", { timeZone: "Asia/Manila" }) ?? "—"} />

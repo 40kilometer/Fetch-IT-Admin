@@ -25,11 +25,11 @@ export async function enqueueBookingNotification(tx: Prisma.TransactionClient, e
   } });
 }
 
-export async function enqueueSupportNotification(tx: Prisma.TransactionClient, message: { id: string; ticketId: string; body: string; createdAt: Date }) {
+export async function enqueueSupportNotification(tx: Prisma.TransactionClient, message: { id: string; ticketId: string; body: string; createdAt: Date },title="Fetch-It support replied") {
   const ticket = await tx.supportTicket.findUniqueOrThrow({ where: { id: message.ticketId }, select: { customerId: true } });
   return tx.customerNotification.create({ data: {
     sourceId: `support:${message.id}`, customerId: ticket.customerId, category: "SUPPORT", ticketId: message.ticketId,
-    title: "Fetch-It support replied", body: message.body.slice(0, 160), createdAt: message.createdAt,
+    title, body: message.body.slice(0, 160), createdAt: message.createdAt,
     url: `/help?ticket=${encodeURIComponent(message.ticketId)}`,
   } });
 }

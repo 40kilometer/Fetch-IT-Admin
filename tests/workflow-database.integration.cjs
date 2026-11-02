@@ -13,6 +13,7 @@ function load(file,cache=new Map()){
   if(name==='./db'||name==='@/lib/db')return {db};
   if(name==='@/lib/staff-access'||name==='./staff-access')return {currentStaff:async permission=>!permission||requirePolicy().hasPermission(actor.role,permission)?actor:null};
   if(name==='./application-mail'||name==='./application-storage')return {};
+  if(name==='@/lib/push-delivery')return {schedulePushDelivery(){}};
   if(name==='@/lib/request-guard')return {withRequestLog:(_,handler)=>handler};
   if(name.startsWith('@/')||name.startsWith('.')){const base=name.startsWith('@/')?'src/'+name.slice(2):path.resolve(path.dirname(full),name);return load(base+'.ts',cache)}return require(name);
  });return exports;
@@ -89,6 +90,20 @@ async function main(){try{
   assert.equal((await update({action:'decide',outcome:'APPROVED',reason:'Evidence supports the proposed follow-up'})).status,200);actor=safety;assert.equal((await update({action:'close',reason:'Follow-up completed and recorded'})).status,200);
   const audit=await db.adminAudit.findFirst({where:{entityId:id,action:'CASE_DECIDE'}});assert.equal(audit.actorId,admin.id);assert.equal(audit.details.reason,'Evidence supports the proposed follow-up');
   assert.equal((await db.adminAudit.findFirst({where:{entityId:id,action:'CASE_CLOSE'}})).details.reason,'Follow-up completed and recorded');assert.equal((await update({action:'note',note:'Too late'})).status,409);
+ });
+ await check('assigned Safety contacts, private call logs and concurrent public reply commit with scoped audit and outbox',async()=>{
+  await db.user.update({where:{id:'customer'},data:{phone:'09000000123'}});
+  await db.workflowCase.create({data:{id:'safety-contact',kind:'SAFETY',title:'Disposable participant contact',summary:'Contact workflow test',status:'IN_REVIEW',assignedToId:safety.id,ticketId:'handoff',subjectUserId:'customer',createdById:cs.id,createdByName:cs.name}});
+  const contact=load('src/app/api/cases/[id]/contact/route.ts').POST;
+  const update=body=>patchCase(request(body),{params:Promise.resolve({id:'safety-contact'})});
+  actor=cs;assert.equal((await contact(request({action:'contacts'}),{params:Promise.resolve({id:'safety-contact'})})).status,403);
+  actor=safety;const contacts=await contact(request({action:'contacts'}),{params:Promise.resolve({id:'safety-contact'})});assert.equal(contacts.status,200);assert.equal((await contacts.json()).contacts.customer.phone,'09000000123');
+  const before=await db.customerNotification.count();
+  const responses=await Promise.all([update({version:1,action:'reply',reply:'Are you safe? Your assigned Safety reviewer is checking this report.'}),update({version:1,action:'reply',reply:'Duplicate should be rejected.'})]);
+  assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);assert.equal(await db.customerNotification.count(),before+1);assert.equal(await db.adminAudit.count({where:{entityId:'safety-contact',action:'CASE_CUSTOMER_REPLY'}}),1);
+  assert.equal((await db.supportTicket.findUniqueOrThrow({where:{id:'handoff'}})).assignedAdminId,cs.id);
+  const calledAt=new Date().toISOString();assert.equal((await update({version:2,action:'call-log',target:'customer',outcome:'NO_ANSWER',calledAt,note:'Retry after checking the conversation response.'})).status,200);
+  assert.equal(await db.customerNotification.count(),before+1);assert.equal(await db.workflowNote.count({where:{caseId:'safety-contact'}}),1);assert.equal((await db.workflowCase.findUniqueOrThrow({where:{id:'safety-contact'}})).version,3);
  });
  assert.equal(await db.authIdentity.count(),0);assert.equal(await db.staffSession.count(),0);
  console.log(JSON.stringify({databaseWorkflowChecks:checks,outboundDelivery:false,liveDataWrites:false}));

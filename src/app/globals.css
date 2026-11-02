@@ -485,3 +485,4 @@ fieldset:disabled { opacity: .65; }
 
 .notification-bell{position:relative;width:auto}.notification-bell svg{flex-shrink:0}@media(max-width:600px){.notification-bell .small{display:none}}
 .safety-sound-controls{padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg);margin:14px 0}.safety-sound-controls p{margin:6px 0}.safety-sound-controls .row-actions{margin:10px 0;flex-wrap:wrap}
+.safety-contact-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px}.safety-contact-person{padding:16px;border:1px solid var(--border);border-radius:10px}.safety-contact-person h3{margin-top:0}.safety-contact-person p{overflow-wrap:anywhere}

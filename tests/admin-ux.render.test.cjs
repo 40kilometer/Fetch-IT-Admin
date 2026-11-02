@@ -18,6 +18,7 @@ function loader(db) {
       if (name === "@/lib/db") return { db };
       if (name === "@/lib/admin-access") return { requireAdminPage: async () => staff };
       if (name === "@/lib/staff-access") return { requireStaffPage: async () => staff };
+      if (name === "@/lib/staff-notifications") return { refreshOperationalSignals:async()=>{} };
       if (name === "next/link") return { __esModule: true, default: ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children) };
       if (name === "next/navigation") return { notFound() { throw Error("not found"); }, useRouter:()=>({refresh(){},push(){}}) };
       if (name.endsWith("action-form")) return { ActionForm: ({ label }) => React.createElement("button", null, label) };
@@ -58,6 +59,32 @@ test("directory page beyond the end is clamped and search filters remain in link
   const html = renderToStaticMarkup(await Directory({ role: "CUSTOMER", query: { page: "999", q: "Alex & Jo", status: "restricted" } }));
   assert.equal(seen.skip, 25); assert.equal(seen.take, 25); assert.equal(seen.where.isBanned, true); assert.equal(seen.where.role, "CUSTOMER");
   assert(html.includes("Alex &amp; Jo")); assert(html.includes("q=Alex+%26+Jo")); assert(html.includes("status=restricted"));
+});
+
+test("completed cash without confirmation is distinguished from Paid without changing saved payment state",async()=>{
+  const base={id:'booking',refCode:'FIT-TEST',status:'DELIVERED',totalFare:294,paymentMethod:'CASH',paymentStatus:'UNPAID',customerPaidAmount:null,riderReceivedAmount:null,demoCommission:null,demoRiderEarnings:null,demoPayoutAt:null};
+  const rows=[base,{...base,id:'paid',refCode:'FIT-PAID',paymentStatus:'PAID',customerPaidAmount:294,riderReceivedAmount:294},{...base,id:'cancelled',refCode:'FIT-CANCELLED',status:'CANCELLED'}];
+  const load=loader({booking:{count:async()=>rows.length,findMany:async()=>rows}});
+  const Page=load('src/app/dashboard/finance/page.tsx').default;
+  const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({})}));
+  assert.match(html,/>Cash not confirmed</);assert.match(html,/Service completed\. Cash collection has not been confirmed/);
+  assert.match(html,/>Paid</);assert.match(html,/>No payment recorded</);assert.match(html,/Customer confirmed: Not recorded/);assert.match(html,/Rider confirmed: Not recorded/);
+  assert.doesNotMatch(html,/>Unpaid</);assert.equal(base.paymentStatus,'UNPAID');assert.equal(base.customerPaidAmount,null);
+  const {paymentPresentation}=load('src/lib/payment-presentation.ts');
+  assert.equal(paymentPresentation({...base,status:'IN_TRANSIT'}).label,'Unpaid');
+  assert.equal(paymentPresentation({...base,paymentStatus:'PENDING',riderReceivedAmount:294}).label,'Awaiting confirmation / review');
+  assert.equal(paymentPresentation({...base,paymentStatus:'REFUNDED'}).label,'Refunded');
+  assert.equal(paymentPresentation({...base,paymentStatus:'FAILED'}).label,'Failed');
+  assert.equal(paymentPresentation({...base,paymentMethod:'DEMO_GCASH'}).label,'Unpaid');
+  assert.equal(paymentPresentation({...base,status:'CANCELLED',riderReceivedAmount:294}).label,'Unpaid');
+  const Status=load('src/components/payment-record-status.tsx').PaymentRecordStatus;
+  assert.match(renderToStaticMarkup(React.createElement(Status,{record:base})),/Cash not confirmed/);
+});
+
+test('shared advisories show published operating guidance separately from monitored incidents',async()=>{
+  const db={platformIncident:{findMany:async()=>[]},staffResource:{findMany:async input=>{assert.equal(input.where.kind,'ANNOUNCEMENT');return [{id:'advisory',title:'Shift coverage',body:'Claim work and record the next step.',updatedAt:new Date()}];}}};
+  const Page=loader(db)('src/app/dashboard/incidents/page.tsx').default;
+  const html=renderToStaticMarkup(await Page());assert.match(html,/Team advisories/);assert.match(html,/Shift coverage/);assert.match(html,/Claim work and record the next step/);
 });
 
 test("support conversation omits only the synthetic original already present on its current page", async () => {

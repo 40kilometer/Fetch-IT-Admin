@@ -43,6 +43,7 @@ function fixture(role='SUPPORT') {
   };
   const overrides=new Map([
     [path.join(root,'src/lib/db.ts'),{db}],
+    [path.join(root,'src/lib/push-delivery.ts'),{schedulePushDelivery(){}}],
     [path.join(root,'src/lib/staff-access.ts'),{currentStaff:async()=>actor,requireStaffPage:async()=>actor}],
     [path.join(root,'src/lib/owner-auth.ts'),{currentOwner:async()=>actor}],
     ['next/navigation',{notFound(){throw new Error('NOT_FOUND');},useRouter:()=>({replace(){},refresh(){}}),usePathname:()=>'/dashboard/cases',useSearchParams:()=>new URLSearchParams()}],

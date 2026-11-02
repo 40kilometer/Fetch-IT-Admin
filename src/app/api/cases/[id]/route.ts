@@ -2,10 +2,17 @@ import {NextRequest,NextResponse} from 'next/server';
 import {db} from '@/lib/db';
 import {staffRoute,StaffError,text} from '@/lib/staff-http';
 import {caseScope,hasPermission,canReviewCase,caseReviewerRoles} from '@/lib/staff-policy';
+import {safetyCaseWork} from '@/lib/safety-case-actions';
+import {schedulePushDelivery} from '@/lib/push-delivery';
 export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}) {
   const {id}=await params;
   return staffRoute(undefined,async(request,staff)=>{
     const body=await request.json();
+    if(['reply','call-log'].includes(body.action)){
+      const result=await db.$transaction(tx=>safetyCaseWork(tx,id,staff,body),{timeout:20000});
+      if(body.action==='reply')schedulePushDelivery();
+      return NextResponse.json(result);
+    }
     const result=await db.$transaction(async tx=>{
       await tx.$queryRaw`SELECT "id" FROM "WorkflowCase" WHERE "id"=${id} FOR UPDATE`;
       const record=await tx.workflowCase.findFirst({where:{id,...caseScope(staff)}});
