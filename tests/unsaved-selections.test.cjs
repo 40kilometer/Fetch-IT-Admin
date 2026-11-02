@@ -7,13 +7,14 @@ function harness(){const slots=[],effects=[],drafts=new Map();let cursor=0;const
  return{effects,drafts,load,render(Component,props){cursor=0;return Component(props)}};
 }
 const nodes=tree=>[tree,...[...(Array.isArray(tree?.props?.children)?tree.props.children:[tree?.props?.children]),...(tree?.props?.items??[]).map(item=>item.content)].filter(Boolean).flatMap(child=>Array.isArray(child)?child.flatMap(nodes):typeof child==='object'?nodes(child):[])];
-test('support status and assignment survive a failed save and refreshing newer server props',async()=>{
+test('support reassignment draft survives a failed save and refreshing newer server props without a status selector',async()=>{
  const old=global.fetch;global.fetch=async()=>Response.json({error:'Record changed'},{status:409});const h=harness(),Form=h.load('src/app/dashboard/support/reply-form.tsx').ReplyForm;
- const props={id:'ticket',status:'OPEN',assignedAdminId:'staff',updatedAt:'1',admins:[{id:'staff',name:'Owner'},{id:'other',name:'Other'}],recipient:'Customer',staffId:'staff',canManage:true};
- try{h.render(Form,props);h.effects[0]();let tree=h.render(Form,props);nodes(tree).filter(n=>n.type==='select')[0].props.onChange({target:{value:'IN_PROGRESS'}});tree=h.render(Form,props);nodes(tree).filter(n=>n.type==='select')[1].props.onChange({target:{value:'other'}});tree=h.render(Form,props);nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await new Promise(setImmediate);
-  assert.equal(h.drafts.get('support:ticket:details').clears,0);const newer={...props,updatedAt:'2',status:'RESOLVED',assignedAdminId:null};h.render(Form,newer);h.effects.at(-1)();const selections=nodes(h.render(Form,newer)).filter(n=>n.type==='select');assert.deepEqual(selections.map(n=>n.props.value),['IN_PROGRESS','other']);assert.deepEqual(h.drafts.get('support:ticket:details').captures.at(-1),{status:'IN_PROGRESS',assignee:'other'});
+ const props={id:'ticket',status:'IN_PROGRESS',assignedAdminId:'staff',updatedAt:'1',admins:[{id:'staff',name:'Owner'},{id:'other',name:'Other'}],recipient:'Customer',staffId:'staff',canManage:true};
+ try{h.render(Form,props);h.effects[0]();let tree=h.render(Form,props);assert.equal(nodes(tree).filter(n=>n.type==='select').length,1);nodes(tree).find(n=>n.type==='select').props.onChange({target:{value:'other'}});tree=h.render(Form,props);nodes(tree).filter(n=>n.type==='form')[1].props.onSubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(h.drafts.get('support:ticket:assignment').clears,0);const newer={...props,updatedAt:'2',assignedAdminId:null};h.render(Form,newer);h.effects.at(-1)();assert.equal(nodes(h.render(Form,newer)).find(n=>n.type==='select').props.value,'other');assert.deepEqual(h.drafts.get('support:ticket:assignment').captures.at(-1),{assignee:'other'});
  }finally{global.fetch=old}
 });
+
 test('service selection and exception reason persist after failure; restore excludes services already active',async()=>{
  const h=harness(),Form=h.load('src/components/application-service-decision.tsx').ApplicationServiceDecision;
  let succeed=false;const props={application:{id:'app',version:1,status:'IN_REVIEW',vehicleClass:'MOTORCYCLE',services:['DELIVERY'],events:[]},approvals:[],admin:true,disabled:false,onAction:async()=>succeed};

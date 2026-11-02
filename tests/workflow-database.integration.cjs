@@ -64,11 +64,18 @@ async function main(){try{
  await db.supportTicket.create({data:{id:'ticket',customerId:'customer',category:'OTHER',message:'Test issue'}});
  const support=load('src/app/api/support/[id]/route.ts').PATCH;
  await check('claim, public reply, duplicate rejection and resolution persist together',async()=>{
-  actor=cs;const patch=async(reply,status,updatedAt)=>(support(request({status,reply,assignedAdminId:cs.id,updatedAt}),{params:Promise.resolve({id:'ticket'})}));
-  let ticket=await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}});assert.equal((await patch('','OPEN',ticket.updatedAt.toISOString())).status,200);
+  actor=cs;const patch=async(reply,status,updatedAt)=>(support(request({action:status==='OPEN'?'claim':status==='RESOLVED'?'resolve':'reply',reply,updatedAt}),{params:Promise.resolve({id:'ticket'})}));
+  let ticket=await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}});assert.equal((await patch('','OPEN',ticket.updatedAt.toISOString())).status,200);assert.equal((await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}})).status,'IN_PROGRESS');
   ticket=await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}});const stale=ticket.updatedAt.toISOString();assert.equal((await patch('Customer reply','IN_PROGRESS',stale)).status,200);assert.equal((await patch('Duplicate reply','IN_PROGRESS',stale)).status,409);
   assert.equal(await db.supportMessage.count(),1);assert.equal(await db.customerNotification.count(),1);
   ticket=await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}});assert.equal((await patch('Resolution sent','RESOLVED',ticket.updatedAt.toISOString())).status,200);
+ });
+ await check('concurrent claim commits one owner; reopening requires a reason and is audited',async()=>{
+  await db.supportTicket.create({data:{id:'race-ticket',customerId:'customer',category:'OTHER',message:'Concurrent claim test'}});
+  const fresh=await db.supportTicket.findUniqueOrThrow({where:{id:'race-ticket'}});
+  actor=cs;const first=support(request({action:'claim',updatedAt:fresh.updatedAt.toISOString()}),{params:Promise.resolve({id:'race-ticket'})});actor=admin;const second=support(request({action:'claim',updatedAt:fresh.updatedAt.toISOString()}),{params:Promise.resolve({id:'race-ticket'})});
+  const results=await Promise.all([first,second]);assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal(await db.adminAudit.count({where:{entityId:'race-ticket',action:'SUPPORT_CLAIM'}}),1);const claimed=await db.supportTicket.findUniqueOrThrow({where:{id:'race-ticket'}});assert.equal(claimed.status,'IN_PROGRESS');assert([cs.id,admin.id].includes(claimed.assignedAdminId));
+  actor=admin;let closed=await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}});assert.equal((await support(request({action:'reopen',updatedAt:closed.updatedAt.toISOString(),reason:''}),{params:Promise.resolve({id:'ticket'})})).status,400);assert.equal((await support(request({action:'reopen',updatedAt:closed.updatedAt.toISOString(),reason:'Customer supplied new evidence'}),{params:Promise.resolve({id:'ticket'})})).status,200);assert.equal((await db.supportTicket.findUniqueOrThrow({where:{id:'ticket'}})).status,'IN_PROGRESS');assert.equal((await db.adminAudit.findFirst({where:{entityId:'ticket',action:'SUPPORT_REOPEN'}})).details.reason,'Customer supplied new evidence');
  });
  const post=load('src/app/api/cases/route.ts').POST,patchCase=load('src/app/api/cases/[id]/route.ts').PATCH;
  // A separate open conversation is used for the handoff path.

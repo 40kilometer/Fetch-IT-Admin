@@ -1,46 +1,40 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { humanize } from "@/lib/admin-ui";
-import {useStaffDraft,DraftNotice,confirmStaffNavigation} from "@/components/staff-drafts";
-export function ReplyForm({ id, status: initialStatus, assignedAdminId: initialAssignee, updatedAt, admins, recipient, staffId, canManage }: { id: string; status: string; assignedAdminId: string | null; updatedAt: string; admins: { id: string; name: string }[]; recipient: string; staffId: string; canManage: boolean }) {
-  const router = useRouter(), pending = useRef(false), version = useRef(updatedAt);
-  const saved = useRef({ status: initialStatus, assignee: initialAssignee });
-  const detailsEdited=useRef(false);
-  const [status, setStatus] = useState(initialStatus), [assignedAdminId, setAssignee] = useState(initialAssignee ?? "");
-  const [reply, setReply] = useState(""), [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [error, setError] = useState(""), [conflict, setConflict] = useState(false);
-  useEffect(() => { version.current = updatedAt; saved.current = { status: initialStatus, assignee: initialAssignee }; if(!detailsEdited.current){setStatus(initialStatus);setAssignee(initialAssignee??"");} }, [updatedAt, initialStatus, initialAssignee]);
-  const draft=useStaffDraft(`support:${id}:public-reply`,updatedAt,values=>setReply(values.reply??""));
-  const detailsDraft=useStaffDraft(`support:${id}:details`,updatedAt,values=>{detailsEdited.current=true;if(["OPEN","IN_PROGRESS","RESOLVED"].includes(values.status))setStatus(values.status);if(canManage&&(values.assignee===""||admins.some(admin=>admin.id===values.assignee)))setAssignee(values.assignee);},{baseline:{status:initialStatus,assignee:initialAssignee??""},labels:{status:"Request status",assignee:"Assigned staff"}});
-  function changeDetails(patch:{status?:string;assignee?:string}){const next={status,assignee:assignedAdminId,...patch};detailsEdited.current=next.status!==saved.current.status||next.assignee!==(saved.current.assignee??"");detailsDraft.capture(next);if(patch.status!==undefined)setStatus(patch.status);if(patch.assignee!==undefined)setAssignee(patch.assignee);}
-  async function save(action: "details" | "reply" | "resolve" | "claim") {
-    if (pending.current) return;
-    if ((action === "reply" || action === "resolve") && !reply.trim()) { setError("Write a reply before sending."); return; }
-    pending.current = true; setBusy(true); setMessage(""); setError(""); setConflict(false);
-    const publicReply = action === "reply" || action === "resolve";
-    try {
-      const response = await fetch(`/api/support/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        status: action === "resolve" ? "RESOLVED" : action === "details" ? status : saved.current.status,
-        assignedAdminId: action === "claim" ? staffId : action === "details" ? assignedAdminId || null : saved.current.assignee,
-        reply: publicReply ? reply : "", updatedAt: version.current,
-      }) });
-      const data = await response.json();
-      if (!response.ok) { setConflict(response.status === 409); throw new Error(data.error || "Could not save the request."); }
-      version.current = data.ticket.updatedAt;
-      saved.current = { status: data.ticket.status, assignee: data.ticket.assignedAdminId };
-      if(action==="details"||action==="claim"){detailsEdited.current=false;setStatus(data.ticket.status);setAssignee(data.ticket.assignedAdminId??"");detailsDraft.clear({status:data.ticket.status,assignee:data.ticket.assignedAdminId??""});}
-      if (publicReply) {setReply("");draft.clear();}
-      setMessage(action === "claim" ? "Request assigned to you." : publicReply ? action === "resolve" ? "Reply sent to the customer and request resolved." : "Reply sent to the customer." : "Request details updated. No message was sent.");
-      router.refresh();
-    } catch (error) { setError(error instanceof Error ? error.message : "Please retry."); }
-    finally { pending.current = false; setBusy(false); }
-  }
-  const claimed = initialAssignee === staffId || canManage;
-  return <div className="support-reply">
-    {!initialAssignee && <div className="workflow-summary"><p>This request is unassigned. Claim it to take ownership.</p><button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save("claim")}>Claim request</button></div>}
-    <form onSubmit={event => { event.preventDefault(); void save("details"); }}><fieldset disabled={busy || !claimed}><legend>Request status</legend><DraftNotice draft={detailsDraft}/><div className="support-controls"><label>Status<select className="input" value={status} onChange={e => changeDetails({status:e.target.value})}>{["OPEN", "IN_PROGRESS", "RESOLVED"].map(v => <option key={v} value={v}>{v === "IN_PROGRESS" ? "In review" : humanize(v)}</option>)}</select></label>{canManage && <label>Assigned to<select className="input" value={assignedAdminId} onChange={e => changeDetails({assignee:e.target.value})} disabled={!canManage}><option value="">Unassigned</option>{admins.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}</div><button className="btn" type="submit">Update details</button></fieldset></form>
-    <form onSubmit={event => { event.preventDefault(); const button = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null; void save(button?.value === "resolve" ? "resolve" : "reply"); }}><fieldset disabled={busy || !claimed}><legend>Public reply to {recipient}</legend><DraftNotice draft={draft}/><label>Message to the customer<textarea className="input" rows={5} required maxLength={2000} value={reply} onChange={e => {setReply(e.target.value);draft.capture({reply:e.target.value});}} placeholder="Write a reply the customer will receive." /></label><div className="row-actions"><button className="btn btn-primary" type="submit" value="reply">Send reply</button><button className="btn" type="submit" value="resolve">Send and resolve</button></div></fieldset></form>
-    {!claimed && <p className="muted small">Claim this request before replying. Your draft stays here when the record is refreshed.</p>}
-    {busy && <p role="status">Saving…</p>}{message && <p role="status" className="success-message">{message}</p>}{error && <p role="alert" className="error-message">{error}</p>}{conflict && <button className="btn" type="button" onClick={async () => {if(await confirmStaffNavigation("Refresh this request with unsaved changes?"))router.refresh();}}>Refresh request (keep reply draft)</button>}
-  </div>;
+import {useEffect,useRef,useState} from 'react';
+import {useRouter} from 'next/navigation';
+import {useStaffDraft,DraftNotice,confirmStaffNavigation} from '@/components/staff-drafts';
+import {ClaimEntry} from '@/components/claim-entry';
+export function ReplyForm({id,status:initialStatus,assignedAdminId:initialAssignee,assignedName,updatedAt,admins,recipient,staffId,canManage}:{id:string;status:string;assignedAdminId:string|null;assignedName?:string;updatedAt:string;admins:{id:string;name:string}[];recipient:string;staffId:string;canManage:boolean}){
+ const router=useRouter(),pending=useRef(false),version=useRef(updatedAt);
+ const [current,setCurrent]=useState({status:initialStatus,assignee:initialAssignee,name:assignedName});
+ const [assignedAdminId,setAssignee]=useState(initialAssignee??''),[reply,setReply]=useState(''),[reason,setReason]=useState('');
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[conflict,setConflict]=useState(false);
+ const assignmentEdited=useRef(false);
+ useEffect(()=>{version.current=updatedAt;setCurrent({status:initialStatus,assignee:initialAssignee,name:assignedName});if(!assignmentEdited.current)setAssignee(initialAssignee??'');},[updatedAt,initialStatus,initialAssignee,assignedName]);
+ const draft=useStaffDraft(`support:${id}:public-reply`,updatedAt,values=>setReply(values.reply??''));
+ const assignmentDraft=useStaffDraft(`support:${id}:assignment`,updatedAt,values=>{if(values.assignee===''||admins.some(person=>person.id===values.assignee)){assignmentEdited.current=true;setAssignee(values.assignee)}},{baseline:{assignee:initialAssignee??''},labels:{assignee:'Assigned staff'}});
+ const reopenDraft=useStaffDraft(`support:${id}:reopen`,updatedAt,values=>setReason(values.reason??''),{baseline:{reason:''},labels:{reason:'Reason for reopening'}});
+ async function save(action:'reply'|'resolve'|'reassign'|'reopen'){
+  if(pending.current)return;
+  if((action==='reply'||action==='resolve')&&!reply.trim()){setError('Write a reply before sending.');return;}
+  pending.current=true;setBusy(true);setMessage('');setError('');setConflict(false);
+  try{
+   const response=await fetch(`/api/support/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,updatedAt:version.current,...(action==='reassign'?{assignedAdminId:assignedAdminId||null}:action==='reopen'?{reason}:{reply})})});
+   const data=await response.json();if(!response.ok){setConflict(response.status===409);throw Error(data.error||'Could not save this request.');}
+   version.current=data.ticket.updatedAt;setCurrent({status:data.ticket.status,assignee:data.ticket.assignedAdminId,name:data.ticket.assignedAdmin?.name});
+   if(action==='reassign'){assignmentEdited.current=false;assignmentDraft.clear({assignee:data.ticket.assignedAdminId??''});}
+   if(action==='reply'||action==='resolve'){setReply('');draft.clear();}
+   if(action==='reopen'){setReason('');reopenDraft.clear();}
+   setMessage(({reply:'Reply sent. Request remains in review.',resolve:'Reply sent and request resolved.',reassign:'Request reassigned. No message was sent.',reopen:'Request reopened. The reason is recorded in the audit log.'})[action]);router.refresh();
+  }catch(cause){setError(cause instanceof Error?cause.message:'Could not save. Your unsent work is preserved.');}
+  finally{pending.current=false;setBusy(false);}
+ }
+ const owned=current.assignee===staffId,resolved=current.status==='RESOLVED',name=current.name??admins.find(person=>person.id===current.assignee)?.name??'another staff member';
+ return <div className="support-reply"><div className="workflow-summary" role="status"><strong>{resolved?'Resolved':current.assignee?`${current.status==='IN_PROGRESS'?'Under review by':'Assigned to'} ${name}`:'Unassigned request'}</strong><p>Status follows the work: claim to start review, then send a reply or send and resolve.</p></div>
+ {!resolved&&(!current.assignee||owned&&current.status==='OPEN')&&<ClaimEntry button href={`/dashboard/support/${id}`} endpoint={`/api/support/${id}`} revision={version.current} kind="support" recordLabel={recipient} claimable>Claim & start review</ClaimEntry>}
+ {!resolved&&!owned&&current.assignee&&<p className="muted small">You are viewing this request. Its owner handles customer replies. Admin or a supervisor can reassign it.</p>}
+ {!resolved&&owned&&<form onSubmit={event=>{event.preventDefault();const button=(event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;void save(button?.value==='resolve'?'resolve':'reply');}}><fieldset disabled={busy}><legend>Public reply to {recipient}</legend><DraftNotice draft={draft}/><label>Message to the customer<textarea className="input" rows={5} required maxLength={2000} value={reply} onChange={event=>{setReply(event.target.value);draft.capture({reply:event.target.value});}} placeholder="Write a reply the customer will receive."/></label><div className="row-actions"><button className="btn btn-primary" type="submit" value="reply">Send reply</button><button className="btn" type="submit" value="resolve">Send and resolve</button></div></fieldset></form>}
+ {canManage&&!resolved&&<details className="action-disclosure"><summary>Reassign request</summary><form onSubmit={event=>{event.preventDefault();void save('reassign');}}><fieldset disabled={busy}><DraftNotice draft={assignmentDraft}/><label>Assigned to<select className="input" value={assignedAdminId} onChange={event=>{assignmentEdited.current=true;setAssignee(event.target.value);assignmentDraft.capture({assignee:event.target.value});}}><option value="">Unassigned</option>{admins.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label><button className="btn" disabled={assignedAdminId===(current.assignee??'')}>Reassign request</button></fieldset></form></details>}
+ {canManage&&resolved&&<details className="action-disclosure"><summary>Reopen request</summary><form onSubmit={event=>{event.preventDefault();void save('reopen');}}><fieldset disabled={busy}><DraftNotice draft={reopenDraft}/><label>Reason for reopening<textarea className="input" required minLength={5} maxLength={2000} value={reason} onChange={event=>{setReason(event.target.value);reopenDraft.capture({reason:event.target.value});}}/></label><button className="btn">Reopen request</button></fieldset></form></details>}
+ {busy&&<p role="status">Saving…</p>}{message&&<p role="status" className="success-message">{message}</p>}{error&&<p role="alert" className="error-message">{error}</p>}{conflict&&<button className="btn" type="button" onClick={async()=>{if(await confirmStaffNavigation('Refresh this request with unsaved changes?'))router.refresh();}}>Refresh request (keep reply draft)</button>}
+ </div>;
 }

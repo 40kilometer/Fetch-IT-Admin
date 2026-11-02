@@ -83,7 +83,8 @@ async function authenticate(credential,cookies,{uv=true,origin=ownerOrigin,expec
     await request(staffOrigin,'/api/bookings/export',supportJar,401);
     await request(staffOrigin,'/dashboard/bookings',supportJar,307);
     await request(staffOrigin,'/dashboard/support/'+privateTicket.id,supportJar,404);
-    await request(staffOrigin,'/api/support/'+ticket.id,supportJar,200,'PATCH',{status:'IN_PROGRESS',reply:'Test support response',assignedAdminId:support.id,updatedAt:ticket.updatedAt.toISOString()});
+    const claimedTicket=await request(staffOrigin,'/api/support/'+ticket.id,supportJar,200,'PATCH',{action:'claim',updatedAt:ticket.updatedAt.toISOString()});
+    await request(staffOrigin,'/api/support/'+ticket.id,supportJar,200,'PATCH',{action:'reply',reply:'Test support response',updatedAt:claimedTicket.ticket.updatedAt});
     await request(staffOrigin,'/api/support/'+ticket.id+'/notes',supportJar,200,'POST',{note:'Internal-only evidence'});
     assert.equal(await db.supportMessage.count({where:{ticketId:ticket.id,body:'Internal-only evidence'}}),0);
     assert.equal(await db.supportInternalNote.count({where:{ticketId:ticket.id}}),1);

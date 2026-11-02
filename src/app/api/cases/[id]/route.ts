@@ -19,12 +19,13 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}
       if(record.status==='RESOLVED') throw new StaffError('This case is resolved. Its history is read-only.',409);
       let data:Record<string,unknown>={version:{increment:1}};
       if(body.action==='claim') {
+        if(!['OPEN','IN_REVIEW'].includes(record.status))throw new StaffError('This review is past the claiming stage. Open its current decision instead.',409);
         if(record.assignedToId&& !owned) throw new StaffError('This case is already assigned.',409);
         data={...data,assignedToId:staff.id,status:record.status==='OPEN'?'IN_REVIEW':record.status};
       } else if(body.action==='assign' && canManage) {
         const roles=caseReviewerRoles(record.kind);
         const assignee=await tx.user.findFirst({where:{id:text(body.assignedToId,100),role:{in:roles as ('ADMIN'|'FINANCE'|'SAFETY'|'SUPPORT'|'SUPPORT_SUPERVISOR')[]},isBanned:false}});
-        if(!assignee) throw new StaffError('Choose an active reviewer for this team.');data={...data,assignedToId:assignee.id};
+        if(!assignee) throw new StaffError('Choose an active reviewer for this team.');data={...data,assignedToId:assignee.id,...(record.status==='OPEN'?{status:'IN_REVIEW'}:{})};
       } else if(body.action==='note') {
         if(!owned&&!canManage&&record.createdById!==staff.id) throw new StaffError('Claim this case before adding evidence.',403);
         await tx.workflowNote.create({data:{caseId:id,authorId:staff.id,authorName:staff.name,body:text(body.note,4000)}});
