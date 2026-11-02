@@ -36,38 +36,38 @@ test('blocked storage does not break the current tab chime and malformed receipt
  assert.equal(lib.reserveSafetyChime({getItem(){throw Error('blocked');},setItem(){}},'key',['one'],100000),true);
 });
 const nodes=tree=>[tree,...(Array.isArray(tree?.props?.children)?tree.props.children:[tree?.props?.children]).filter(Boolean).flatMap(child=>Array.isArray(child)?child.flatMap(nodes):typeof child==='object'?nodes(child):[])];
-function harness(role='SAFETY'){
- const slots=[],effects=[],instances=[],events=new Map(),store=storage();let cursor=0,tones=0,actor='safety';
+function harness(role='SAFETY',store=storage(),initiallyBlocked=false){
+ const slots=[],effects=[],instances=[],events=new Map(),documentEvents=new Map();let cursor=0,tones=0,actor='safety',blocked=initiallyBlocked;
  class Context{
-  constructor(){this.state='suspended';this.currentTime=0;this.destination={};instances.push(this);}
-  async resume(){this.state='running';}async close(){this.state='closed';}
+  constructor(){this.state='suspended';this.currentTime=0;this.destination={};this.waiters=[];instances.push(this);}
+  async resume(){if(blocked==='pending')return new Promise(resolve=>this.waiters.push(resolve));if(blocked)throw Error('Audio needs a user interaction. Your preference remains on.');this.state='running';this.waiters.splice(0).forEach(resolve=>resolve());this.onstatechange?.();}async close(){this.state='closed';}
   createOscillator(){return{frequency:{setValueAtTime(){}},connect(){},disconnect(){},start(){tones++;},stop(){}};}
   createGain(){return{gain:{setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},disconnect(){}};}
  }
  const react={...React,useRef(initial){const index=cursor++;return slots[index]??={current:initial};},useState(initial){const index=cursor++;if(!(index in slots))slots[index]=initial;return[slots[index],value=>slots[index]=typeof value==='function'?value(slots[index]):value];},useCallback(callback){return callback;},useEffect(callback,deps){const index=cursor++,old=slots[index];if(!old||deps.some((dep,i)=>!Object.is(dep,old.deps[i]))){slots[index]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[index].cleanup?.();slots[index].cleanup=callback();});}}};
- const globals={localStorage:store,navigator:{locks:{request:async(_,callback)=>callback()}},window:{AudioContext:Context,addEventListener:(key,callback)=>events.set(key,callback),removeEventListener:key=>events.delete(key)}};
+ const globals={document:{visibilityState:'visible',addEventListener:(key,callback)=>documentEvents.set(key,callback),removeEventListener:key=>documentEvents.delete(key)},localStorage:store,navigator:{locks:{request:async(_,callback)=>callback()}},window:{AudioContext:Context,addEventListener:(key,callback)=>events.set(key,callback),removeEventListener:key=>events.delete(key)}};
  const {useSafetyAlertSound}=load('src/components/safety-alert-sound.tsx',globals,{react});
  const render=()=>{cursor=0;const sound=useSafetyAlertSound(actor,role);while(effects.length)effects.shift()();return sound;};
  const button=label=>nodes(render().controls).find(node=>node.type==='button'&&node.props.children===label);
- render();return{render,button,instances,store,events,get tones(){return tones;},setActor(id){actor=id;render();},unmount(){slots.forEach(slot=>slot?.cleanup?.());}};
+ render();return{render,button,instances,store,events,documentEvents,setBlocked(value){blocked=value;},get tones(){return tones;},setActor(id){actor=id;render();},unmount(){slots.forEach(slot=>slot?.cleanup?.());}};
 }
 test('only Admin and Safety receive sound controls; test preview does not enable automatic sounds',async()=>{
  for(const role of ['SUPPORT','SUPPORT_SUPERVISOR','SUPERADMIN'])assert.equal(harness(role).render().controls,null);
  for(const role of ['ADMIN','SAFETY']){
   const h=harness(role);h.render().observe([]);await h.button('Test sound').props.onClick();await new Promise(setImmediate);
-  assert.equal(h.tones,2);assert.equal(h.render().enabled.current,false);
-  h.render().observe([notice('new')]);await new Promise(setImmediate);assert.equal(h.tones,2);h.unmount();
+  assert.equal(h.tones,6);assert.equal(h.render().enabled.current,false);
+  h.render().observe([notice('new')]);await new Promise(setImmediate);assert.equal(h.tones,6);h.unmount();
  }
 });
 test('enabling plays a preview, new safety alerts chime once, unrelated alerts stay silent, and mute closes audio',async()=>{
  const h=harness();h.render().observe([notice('old')]);await h.button('Enable safety sounds').props.onClick();await new Promise(setImmediate);
- assert.equal(h.render().enabled.current,true);assert.equal(h.tones,2);
- h.render().observe([notice('old'),notice('cs',{safetyReview:false})]);assert.equal(h.tones,2);
- h.render().observe([notice('new')]);await new Promise(setImmediate);assert.equal(h.tones,4);
- h.render().observe([notice('new')]);await new Promise(setImmediate);assert.equal(h.tones,4);
- h.button('Mute safety sounds').props.onClick();h.render().observe([notice('muted')]);await new Promise(setImmediate);assert.equal(h.tones,4);assert.equal(h.instances.at(-1).state,'closed');
- await h.button('Enable safety sounds').props.onClick();await new Promise(setImmediate);assert.equal(h.tones,6);
- h.render().observe([notice('muted')]);await new Promise(setImmediate);assert.equal(h.tones,6);h.unmount();assert.equal(h.instances.at(-1).state,'closed');
+ assert.equal(h.render().enabled.current,true);assert.equal(h.tones,6);
+ h.render().observe([notice('old'),notice('cs',{safetyReview:false})]);assert.equal(h.tones,6);
+ h.render().observe([notice('new')]);await new Promise(setImmediate);assert.equal(h.tones,12);
+ h.render().observe([notice('new')]);await new Promise(setImmediate);assert.equal(h.tones,12);
+ h.button('Mute safety sounds').props.onClick();h.render().observe([notice('muted')]);await new Promise(setImmediate);assert.equal(h.tones,12);assert.equal(h.instances.at(-1).state,'closed');
+ await h.button('Enable safety sounds').props.onClick();await new Promise(setImmediate);assert.equal(h.tones,18);
+ h.render().observe([notice('muted')]);await new Promise(setImmediate);assert.equal(h.tones,18);h.unmount();assert.equal(h.instances.at(-1).state,'closed');
 });
 test('switching accounts or muting in another tab stops audio and discards pending alerts',async()=>{
  const h=harness();h.render().observe([]);await h.button('Enable safety sounds').props.onClick();await new Promise(setImmediate);
@@ -80,4 +80,50 @@ test('server feed preserves its trusted safety classification in the response',a
  const rows=[{...notice('safety'),createdAt:new Date(),title:'Safety',detail:'Review',urgent:false,claimKind:null,revision:null},{...notice('cs',{safetyReview:false,entityType:'SUPPORT'}),createdAt:new Date(),title:'CS',detail:'Reply',urgent:false,claimKind:null,revision:null}];
  const response=await notificationFeed({$queryRaw:async()=>rows},{id:'admin',role:'ADMIN'},'personal');
  assert.equal(response.items[0].safetyReview,true);assert.equal(response.items[1].safetyReview,false);
+});
+
+test('saved On and Off preferences are restored after a reload without previewing the backlog',async()=>{
+ const store=storage(),first=harness('SAFETY',store);
+ first.button('Enable safety sounds').props.onClick();await new Promise(setImmediate);
+ assert.equal(store.getItem(lib.safetySoundKey('safety')),'on');first.unmount();
+ const restored=harness('SAFETY',store);await new Promise(setImmediate);
+ assert.equal(restored.render().enabled.current,true);assert(restored.button('Mute safety sounds'));
+ restored.render().observe([notice('backlog')]);await new Promise(setImmediate);assert.equal(restored.tones,0);
+ restored.button('Mute safety sounds').props.onClick();restored.unmount();
+ const muted=harness('SAFETY',store);assert.equal(muted.render().enabled.current,false);assert(muted.button('Enable safety sounds'));muted.unmount();
+});
+
+test('browser suspension keeps preference On and retains a new alert until audio resumes',async()=>{
+ const h=harness();h.render().observe([]);h.button('Enable safety sounds').props.onClick();await new Promise(setImmediate);
+ h.instances.at(-1).state='suspended';h.instances.at(-1).onstatechange();h.setBlocked(true);
+ h.render().observe([notice('while-paused')]);await new Promise(setImmediate);
+ assert.equal(h.render().enabled.current,true);assert.equal(h.store.getItem(lib.safetySoundKey('safety')),'on');assert(h.button('Mute safety sounds'));assert(h.button('Resume audio'));assert.equal(h.tones,6);
+ h.setBlocked(false);h.events.get('focus')();await new Promise(setImmediate);assert.equal(h.tones,12);
+ h.events.get('focus')();h.render().observe([notice('while-paused')]);await new Promise(setImmediate);assert.equal(h.tones,12);h.unmount();
+});
+
+test('a blocked startup resume does not lock controls and the next interaction restores audio silently',async()=>{
+ const store=storage();store.setItem(lib.safetySoundKey('safety'),'on');
+ const h=harness('SAFETY',store,'pending');assert.equal(h.render().enabled.current,true);assert(h.button('Mute safety sounds'));
+ h.render().observe([notice('backlog')]);h.setBlocked(false);h.events.get('pointerdown')();await new Promise(setImmediate);
+ assert.equal(h.render().enabled.current,true);assert.equal(h.instances.at(-1).state,'running');assert.equal(h.tones,0);
+ h.instances.at(-1).state='suspended';h.setBlocked('pending');h.events.get('focus')();
+ h.button('Mute safety sounds').props.onClick();assert.equal(h.render().enabled.current,false);assert.equal(store.getItem(lib.safetySoundKey('safety')),'off');h.unmount();
+});
+
+test('On changes in another tab are restored, while changed-account audio and pending alerts are discarded',async()=>{
+ const h=harness();h.store.setItem(lib.safetySoundKey('safety'),'on');h.events.get('storage')({key:lib.safetySoundKey('safety'),newValue:'on'});await new Promise(setImmediate);
+ assert.equal(h.render().enabled.current,true);assert.equal(h.tones,0);
+ h.instances.at(-1).state='suspended';h.setBlocked('pending');h.render().observe([]);h.render().observe([notice('pending')]);
+ h.setActor('another');assert.equal(h.render().enabled.current,false);assert.equal(h.instances.at(-1).state,'closed');
+ h.setBlocked(false);h.events.get('pointerdown')();await new Promise(setImmediate);assert.equal(h.tones,0);h.unmount();
+});
+
+test('playback failure cannot consume the shared alert receipt',()=>{
+ const store=storage();let played=0;
+ assert.throws(()=>lib.reserveSafetyChime(store,'heard',['new'],100000,()=>{throw Error('suspended');}),/suspended/);
+ assert.equal(store.getItem('heard'),null);
+ assert.equal(lib.reserveSafetyChime(store,'heard',['new'],100001,()=>played++),true);
+ assert.equal(lib.reserveSafetyChime(store,'heard',['new'],100002,()=>played++),false);assert.equal(played,1);
+ store.setItem('bad','invalid');lib.reserveSafetyChime(store,'bad',['new'],100003);assert.equal(lib.reserveSafetyChime(store,'bad',['new'],100004),false);
 });

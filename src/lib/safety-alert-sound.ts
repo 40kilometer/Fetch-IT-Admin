@@ -22,42 +22,48 @@ export class SafetyAlertTracker {
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'>;
 // Called under a browser Web Lock when supported, so tabs share one chime.
 // New events inside the cooldown are covered by the preceding attention chime.
-export function reserveSafetyChime(storage:Storage,key:string,ids:readonly string[],now:number):boolean{
+export function reserveSafetyChime(storage:Storage,key:string,ids:readonly string[],now:number,play?:()=>void):boolean{
   if(!ids.length)return false;
-  try{
-    const value=JSON.parse(storage.getItem(key)??'null');
-    const heard:string[]=Array.isArray(value?.ids)?value.ids.filter((id:unknown)=>typeof id==='string'):[];
-    const fresh=ids.filter(id=>!heard.includes(id));
-    if(!fresh.length)return false;
-    const last=typeof value?.at==='number'&&Number.isFinite(value.at)?value.at:0;
-    const play=last===0||now-last>=10000||now<last;
-    storage.setItem(key,JSON.stringify({ids:[...new Set([...heard,...fresh])].slice(-600),at:play?now:last}));
-    return play;
-  }catch{return true;}
+  let value;
+  try{value=JSON.parse(storage.getItem(key)??'null');}catch{value=null;}
+  const heard:string[]=Array.isArray(value?.ids)?value.ids.filter((id:unknown)=>typeof id==='string'):[];
+  const fresh=ids.filter(id=>!heard.includes(id));
+  if(!fresh.length)return false;
+  const last=typeof value?.at==='number'&&Number.isFinite(value.at)?value.at:0;
+  const shouldPlay=last===0||now-last>=10000||now<last;
+  // A suspended/failed playback must not consume the shared receipt.
+  if(shouldPlay)play?.();
+  try{storage.setItem(key,JSON.stringify({ids:[...new Set([...heard,...fresh])].slice(-600),at:shouldPlay?now:last}));}catch{}
+  return shouldPlay;
 }
 
 export class SafetyChime {
   private context:AudioContext|null=null;
   private disposed=false;
+  constructor(private changed:()=>void=()=>{}){}
   get ready(){return !this.disposed&&this.context?.state==='running';}
-  // Invoke directly from a click; never try to circumvent autoplay permission.
+  // Resume normally when allowed; a user gesture can retry a blocked browser.
   async enable(){
     if(this.disposed)throw Error('Sound controls have closed. Reload the page to try again.');
     if(!window.AudioContext)throw Error('This browser does not support alert sounds. Visual alerts remain available.');
-    this.context??=new window.AudioContext();
+    if(!this.context||this.context.state==='closed'){
+      this.context=new window.AudioContext();
+      this.context.onstatechange=()=>{if(!this.disposed)this.changed();};
+    }
     if(this.context.state!=='running')await this.context.resume();
-    if(!this.ready)throw Error('Sound is paused by your browser. Click Enable safety sounds to try again.');
+    if(!this.ready)throw Error('Sound is paused by your browser. Use Resume audio or interact with the portal to retry.');
   }
   play(){
     const context=this.context;
-    if(!context||!this.ready)throw Error('Sound is paused. Click Enable safety sounds to resume it.');
-    [740,988].forEach((frequency,index)=>{
-      const start=context.currentTime+index*.18,oscillator=context.createOscillator(),gain=context.createGain();
-      oscillator.type='sine';oscillator.frequency.setValueAtTime(frequency,start);
-      gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(.12,start+.015);gain.gain.exponentialRampToValueAtTime(.001,start+.16);
+    if(!context||!this.ready)throw Error('Sound is paused. Use Resume audio to retry; your preference remains on.');
+    // Three clearly separated high/low pairs replace the soft two-note chime.
+    [880,1320,880,1320,880,1320].forEach((frequency,index)=>{
+      const start=context.currentTime+index*.28,oscillator=context.createOscillator(),gain=context.createGain();
+      oscillator.type='triangle';oscillator.frequency.setValueAtTime(frequency,start);
+      gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(.24,start+.008);gain.gain.setValueAtTime(.24,start+.13);gain.gain.exponentialRampToValueAtTime(.001,start+.23);
       oscillator.connect(gain);gain.connect(context.destination);
       oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
-      oscillator.start(start);oscillator.stop(start+.17);
+      oscillator.start(start);oscillator.stop(start+.24);
     });
   }
   close(){this.disposed=true;const context=this.context;this.context=null;if(context&&context.state!=='closed')void context.close().catch(()=>{});}
