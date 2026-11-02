@@ -1,43 +1,20 @@
-import { isSafetyAlert } from "@/lib/safety-alert";
-import {reviewLabel} from "@/lib/review-queue";
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { currentStaff } from "@/lib/staff-access";
-import { caseScope, hasPermission, supportScope } from "@/lib/staff-policy";
-
-export async function GET() {
-  try {
-    const staff = await currentStaff();
-    if (!staff) return NextResponse.json({ error: "Sign in with an active staff account." }, { status: 401 });
-    const operations = hasPermission(staff.role, "operations");
-    const support = hasPermission(staff.role, "support");
-    const finance = hasPermission(staff.role, "finance");
-    const overdue = new Date(Date.now() - 5 * 60_000);
-    const [cases, waiting, mismatches, tickets, applications] = await Promise.all([
-      db.workflowCase.findMany({ where: { AND: [caseScope(staff), { status: { not: "RESOLVED" } }] },
-        take: 50, orderBy: { updatedAt: "desc" }, select: { id: true, title: true, kind: true, status: true, version: true, updatedAt: true, createdById: true, assignedToId: true } }),
-      operations ? db.booking.findMany({ where: { status: "PENDING", riderId: null, createdAt: { lte: overdue },
-        OR: [{ scheduledAt: null }, { scheduledAt: { lte: overdue } }],
-        AND: [{ OR: [{ paymentMethod: "CASH" }, { paymentStatus: "PAID" }] }] },
-        select: { id: true, refCode: true, type: true, createdAt: true }, orderBy: { createdAt: "asc" }, take: 30 }) : [],
-      finance ? db.$queryRaw<{ id: string; refCode: string; updatedAt: Date }[]>`
-        SELECT "id", "refCode", "updatedAt" FROM "Booking"
-        WHERE "paymentMethod" = 'CASH' AND "paymentStatus" = 'PENDING'
-          AND "customerPaidAmount" IS NOT NULL AND "riderReceivedAmount" IS NOT NULL
-          AND ("customerPaidAmount" <> "totalFare" OR "riderReceivedAmount" <> "totalFare")
-        ORDER BY "updatedAt" DESC LIMIT 30` : [],
-      support ? db.supportTicket.findMany({ where: { AND: [supportScope(staff), { status: { not: "RESOLVED" } }] },
-        select: { id: true, message: true, priority: true, category: true, createdAt: true, lastCustomerMessageAt: true, lastAdminReplyAt: true, booking: { select: { refCode: true } } }, orderBy: [{ priority: "desc" }, { lastCustomerMessageAt: "desc" }], take: 100 }) : [],
-      operations ? db.riderApplication.findMany({ where: { status: { in: ["SUBMITTED", "IN_REVIEW", "FORCE_APPROVAL_PENDING"] } },
-        select: { id: true, version: true, status: true, updatedAt: true, user: { select: { name: true } } }, orderBy: { updatedAt: "desc" }, take: 30 }) : [],
-    ]);
-    const items = [
-      ...cases.map(c => ({ id: `case:${c.id}:${c.version}`, title: operations && c.status === "AWAITING_ADMIN" && c.createdById !== staff.id && c.assignedToId !== staff.id ? `Awaiting Admin decision: ${c.title}` : c.title, detail: `${reviewLabel(c.kind)} · ${reviewLabel(c.status)}`, at: c.updatedAt.toISOString(), href: `/dashboard/cases/${c.id}` })),
-      ...waiting.map(b => ({ id: `unassigned:${b.id}`, title: `${b.type === "RIDE" ? "Ride" : "Delivery"} needs a rider`, detail: `${b.refCode} · Waiting more than 5 minutes after pickup became due`, at: b.createdAt.toISOString(), href: `/dashboard/bookings/${b.id}` })),
-      ...mismatches.map(b => ({ id: `payment:${b.id}:${b.updatedAt.toISOString()}`, title: "Cash payment needs review", detail: `${b.refCode} · Confirmed amounts do not match the fare`, at: b.updatedAt.toISOString(), href: operations ? `/dashboard/bookings/${b.id}` : `/dashboard/finance?ref=${encodeURIComponent(b.refCode)}` })),
-      ...tickets.filter(t => isSafetyAlert(t.message, t.priority) || !t.lastAdminReplyAt || t.lastCustomerMessageAt > t.lastAdminReplyAt).map(t => ({ id: `support:${t.id}:${t.lastCustomerMessageAt.toISOString()}`, title: isSafetyAlert(t.message, t.priority) ? "Urgent safety alert" : t.lastAdminReplyAt ? "Customer replied" : "Support request needs a reply", detail: `${t.booking?.refCode ?? "Account help"} · ${t.category.replaceAll("_", " ")}`, at: t.lastCustomerMessageAt.toISOString(), href: `/dashboard/support/${t.id}` })),
-      ...applications.map(a => ({ id: `application:${a.id}:${a.version}`, title: a.status === "FORCE_APPROVAL_PENDING" ? "Force approval needs your decision" : "Rider application needs review", detail: a.user.name.replace(/^Demo · /, ""), at: a.updatedAt.toISOString(), href: `/dashboard/applications/${a.id}` })),
-    ].sort((a, b) => Number(b.title.startsWith("Urgent safety alert")) - Number(a.title.startsWith("Urgent safety alert")) || b.at.localeCompare(a.at)).slice(0, 100);
-    return NextResponse.json({ items, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
-  } catch { return NextResponse.json({ error: "Notifications are unavailable. Please retry." }, { status: 503 }); }
+import {NextRequest,NextResponse} from 'next/server';
+import {currentStaff} from '@/lib/staff-access';
+import {db} from '@/lib/db';
+import {notificationFeed,noticeView,readNotifications,refreshOperationalSignals} from '@/lib/staff-notifications';
+export async function GET(req:NextRequest){
+ try{
+  const staff=await currentStaff();if(!staff)return NextResponse.json({error:'Sign in with an active staff account.'},{status:401});
+  await refreshOperationalSignals(db);
+  return NextResponse.json(await notificationFeed(db,staff,noticeView(req.nextUrl.searchParams.get('view'),staff.role),req.nextUrl.searchParams.get('before')??undefined),{headers:{'Cache-Control':'private, no-store'}});
+ }catch{return NextResponse.json({error:'Notifications are unavailable. Please retry.'},{status:503,headers:{'Cache-Control':'private, no-store'}});}
+}
+export async function PATCH(req:NextRequest){
+ if(req.headers.get('origin')!==req.nextUrl.origin||req.headers.get('sec-fetch-site')==='cross-site')return NextResponse.json({error:'This request is not allowed.'},{status:403});
+ try{
+  const staff=await currentStaff();if(!staff)return NextResponse.json({error:'Sign in again before marking notifications as read.'},{status:401});
+  const body=await req.json();
+  const result=await readNotifications(db,staff,noticeView(body.view,staff.role),body.ids);
+  return NextResponse.json(result,{headers:{'Cache-Control':'private, no-store'}});
+ }catch(error){return NextResponse.json({error:error instanceof Error&&/notifications|Choose up to/.test(error.message)?error.message:'Could not save read status. Please retry.'},{status:400});}
 }

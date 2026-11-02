@@ -29,7 +29,7 @@ function matches(row,where={}) {
 }
 function fixture(role='SUPPORT') {
   const actor={id:'staff',name:'Test staff',role,email:'test@example.invalid'};
-  const ticket={id:'ticket',assignedAdminId:'staff',customerId:'customer',bookingId:'booking',status:'OPEN',priority:'HIGH',message:'Customer message',createdAt:new Date(),updatedAt:new Date(),customer:{name:'Test customer'}};
+  const ticket={id:'ticket',isEmergency:false,assignedAdminId:'staff',customerId:'customer',bookingId:'booking',status:'OPEN',priority:'HIGH',message:'Customer message',createdAt:new Date(),updatedAt:new Date(),customer:{name:'Test customer'}};
   const cases=[],notes=[],audits=[],queries=[];
   const db={
     async $queryRaw(){return [];}, async $transaction(fn){return fn(db);},

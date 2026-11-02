@@ -52,6 +52,7 @@ export function staffNavigation(role: string): StaffNavGroup[] {
     groups.push({ label: team.label, team: team.slug, icon: team.icon, links });
   }
   if (admin) groups.push({ label: "Reporting", links: [{ href: "/dashboard/reports", label: "Reports", icon: "reports" }, { href: "/dashboard/audit", label: "All audit logs", icon: "audit" }] });
+  groups.push({label:"Shared updates",links:[{href:"/dashboard/incidents",label:"Operational advisories",icon:"overview"}]});
   return groups;
 }
 

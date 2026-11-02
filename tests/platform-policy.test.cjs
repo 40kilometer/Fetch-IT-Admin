@@ -30,7 +30,7 @@ test('staff permissions preserve owner-only capabilities and specialist boundari
   assert(hasPermission('SUPERADMIN','operations'));
 });
 test('support and reviewer scopes do not expose another team or agent',()=>{
-  assert.deepEqual(supportScope({id:'agent',role:'SUPPORT'}),{OR:[{assignedAdminId:'agent'},{assignedAdminId:null}]});
+  assert.deepEqual(supportScope({id:'agent',role:'SUPPORT'}),{isEmergency:false,OR:[{assignedAdminId:'agent'},{assignedAdminId:null}]});
   assert(!hasPermission('FINANCE','finance'));
   assert.equal(caseScope({id:'reviewer',role:'SAFETY'}).kind,'SAFETY');
   assert.deepEqual(caseScope({id:'supervisor',role:'SUPPORT_SUPERVISOR'}).OR,[{kind:'ESCALATION'},{createdById:'supervisor'}]);

@@ -58,7 +58,7 @@ for (const [role, slug] of [["SUPPORT", "customer-support"], ["SUPPORT_SUPERVISO
   test(`${role} sees only its team's tools and no Admin staff/audit links`, () => {
     const f = fixture(role, { pathname: `/dashboard/teams/${slug}` });
     const { staffNavigation } = f.load("src/lib/staff-teams.ts"), groups = staffNavigation(role);
-    assert.deepEqual(groups.map(group => group.team), [slug]);
+    assert.deepEqual(groups.filter(group=>group.team).map(group => group.team), [slug]);
     assert(!groups.flatMap(group => group.links).some(link => link.management));
     const Shell = f.load("src/app/dashboard/admin-shell.tsx").AdminShell;
     const html = renderToStaticMarkup(React.createElement(Shell, { admin: f.staff }, "Workspace"));
