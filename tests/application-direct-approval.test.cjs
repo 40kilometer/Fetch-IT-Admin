@@ -227,13 +227,14 @@ test('Approve and Reject buttons follow the result gate while Force approval and
   const adminHtml = render(pending, true); assert(adminHtml.includes('Approve force request')); assert(adminHtml.includes('Recorded reason.'));
 });
 
-test('only Admin receives notifications of pending force requests', async () => {
-  let queries = 0;
-  const db = { $queryRaw: async () => [], booking: { findMany: async () => [] }, supportTicket: { findMany: async () => [] }, supportMessage: { findMany: async () => [] }, workflowCase: { findMany: async () => [] }, riderApplication: { findMany: async () => { queries++; return [{ id: 'app', status: 'FORCE_APPROVAL_PENDING', version: 2, updatedAt: new Date(), user: { name: 'Rider' } }]; } } };
-  for (const role of ['ADMIN', 'SAFETY']) {
-    const load = loader({ '@/lib/db': { db }, '@/lib/admin-access': {}, '@/lib/staff-access': { currentStaff: async () => ({ id: role, role }) } });
-    const response = await load('src/app/api/notifications/route.ts').GET(); assert.equal(response.status, 200);
-    const { items } = await response.json(); assert.equal(items.some(i => i.title === 'Force approval needs your decision'), role === 'ADMIN');
-  }
-  assert.equal(queries, 1);
+test('notification routes select feeds using the authenticated role',async()=>{
+ const calls=[];
+ for(const role of ['ADMIN','SAFETY','SUPPORT_SUPERVISOR']){
+  const load=loader({'@/lib/db':{db:{}},'@/lib/staff-access':{currentStaff:async()=>({id:role,role})},'@/lib/staff-notifications':{
+   refreshOperationalSignals:async()=>{},noticeView:(value)=>value,notificationFeed:async(db,actor,view)=>{calls.push({role:actor.role,view});return {items:[]};}
+  }});
+  const response=await load('src/app/api/notifications/route.ts').GET(new NextRequest('https://test.invalid/api/notifications?view=team'));
+  assert.equal(response.status,200);
+ }
+ assert.deepEqual(calls.map(call=>call.role),['ADMIN','SAFETY','SUPPORT_SUPERVISOR']);assert(calls.every(call=>call.view==='team'));
 });

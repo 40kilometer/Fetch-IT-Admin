@@ -10,7 +10,7 @@ export const POST=staffRoute('resources.edit',async(req,staff)=>{
   if(!allowed.includes(body.kind))throw new StaffError('You cannot publish this resource.',403);
   if(team&&!team.resourceKinds.includes(body.kind))throw new StaffError('Choose a resource type for this team.',403);
   const record=await db.$transaction(async tx=>{
-    const saved=await tx.staffResource.create({data:{kind:body.kind,title:text(body.title,160),body:text(body.body,4000),updatedById:staff.id}});
+    const saved=await tx.staffResource.create({data:{kind:body.kind,title:text(body.title,160),body:text(body.body,4000),updatedById:staff.id,audienceRoles:team?[...team.roles]:[]}});
     await tx.adminAudit.create({data:{actorId:staff.id,actorName:staff.name,action:'RESOURCE_PUBLISHED',entityType:'RESOURCE',entityId:saved.id,details:{kind:saved.kind,title:saved.title,...(team?{team:team.slug}:{})}}});return saved;
   });return NextResponse.json({message:`Published ${record.title}.`},{status:201});
 });
