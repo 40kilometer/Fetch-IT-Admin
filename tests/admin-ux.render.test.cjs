@@ -60,6 +60,36 @@ test("directory page beyond the end is clamped and search filters remain in link
   assert(html.includes("Alex &amp; Jo")); assert(html.includes("q=Alex+%26+Jo")); assert(html.includes("status=restricted"));
 });
 
+test("support conversation omits only the synthetic original already present on its current page", async () => {
+  const createdAt=new Date('2026-10-28T08:52:20.000Z');
+  const ticket={id:'ticket',customerId:'customer',customer:{name:'Customer',email:'customer@example.invalid'},booking:null,message:'Initial request text',createdAt,updatedAt:createdAt,status:'OPEN',priority:'NORMAL',assignedAdminId:null};
+  let messages=[{id:'initial',authorId:'customer',authorRole:'CUSTOMER',authorName:'Customer',body:ticket.message,createdAt}];
+  const db={supportTicket:{findFirst:async()=>ticket,findMany:async()=>[]},user:{findMany:async()=>[]},supportInternalNote:{count:async()=>0,findMany:async()=>[]},supportMessage:{count:async()=>messages.length,findMany:async()=>messages}};
+  const Page=loader(db)('src/app/dashboard/support/[id]/page.tsx').default;
+  const render=async()=>renderToStaticMarkup(await Page({params:Promise.resolve({id:'ticket'}),searchParams:Promise.resolve({})}));
+  let html=await render();
+  assert.doesNotMatch(html,/class="original-request"/);
+  assert.equal(html.split('Initial request text').length-1,1);
+  messages=[{...messages[0],id:'later',createdAt:new Date(createdAt.getTime()+1000)}];
+  html=await render();
+  assert.match(html,/class="original-request"/);
+  assert.equal(html.split('Initial request text').length-1,2);
+  messages=[];
+  html=await render();
+  assert.match(html,/class="original-request" open=""/);
+  assert.equal(html.split('Initial request text').length-1,1);
+});
+
+test("original request matching requires the same customer, event time and exact body",()=>{
+  const {originalRequestInThread}=loader({})('src/lib/support-conversation.ts');
+  const request={message:'Same words',customerId:'customer',createdAt:new Date('2026-10-28T08:52:20Z')};
+  const message={body:request.message,authorId:request.customerId,authorRole:'CUSTOMER',createdAt:request.createdAt};
+  assert.equal(originalRequestInThread(request,[message]),true);
+  for(const change of [{authorId:'another'},{authorId:null},{authorRole:'SUPPORT'},{body:'Different words'},{createdAt:new Date(request.createdAt.getTime()+1)}])assert.equal(originalRequestInThread(request,[{...message,...change}]),false);
+  assert.equal(originalRequestInThread(request,[]),false);
+  assert.equal(originalRequestInThread({...request,createdAt:new Date('invalid')},[message]),false);
+});
+
 test("case screens show the next valid action and hide self approval and terminal actions", async () => {
   const record = { id: "case", title: "Review", kind: "FINANCE", summary: "Facts", priority: "HIGH", status: "AWAITING_ADMIN", createdById: "admin", createdByName: "Test admin", assignedToId: "admin", notes: [], version: 2, bookingId: null };
   const db = { workflowNote:{count:async()=>0,findMany:async()=>[]},workflowCase: { findFirst: async () => record }, user: { findMany: async () => [], findUnique: async () => ({ name: "Reviewer" }) } };

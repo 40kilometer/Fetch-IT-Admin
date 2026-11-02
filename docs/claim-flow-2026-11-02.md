@@ -23,3 +23,9 @@ Role scopes are unchanged: this release does not let CS browse another agent's p
 - Production webpack build and TypeScript passed.
 - Browser checks on the built portal verified support-card popup, Escape/Cancel, View only retaining an unassigned ticket, zero manual status selectors in the request form, another owner's read-only reply view, team case claim prompt and rider application claim prompt. Desktop and 390-pixel mobile screenshots were inspected. Real live tickets were not claimed or reassigned for testing.
 - Delivery testing remains with the user. No test email or push notification was sent.
+
+## Conversation display follow-up
+
+Support and linked case conversations omit the synthetic **Original request** card when the current page already contains that exact customer message, with the same customer ID, body and creation timestamp. Actual saved messages are never filtered or deleted. Original-request context remains available on pages that do not contain it; later repeated replies remain visible. Internal handoff summaries and audit history remain unchanged.
+
+The follow-up passed **176 automated checks** and a production webpack/TypeScript build. Render checks cover both conversation views, repeated later replies and an empty thread; matching also rejects a different customer, staff author, missing author, changed body or timestamp.

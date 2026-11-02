@@ -134,3 +134,15 @@ test('Safety records a resolution only after an Admin-approved recommendation',a
   assert.equal((await f.patch({action:'close',reason:'Investigation complete'})).status,409);
   f.cases[0].status='APPROVED';assert.equal((await f.patch({action:'close',reason:'Approved action recorded'})).status,200);assert.equal(f.cases[0].status,'RESOLVED');
 });
+
+test('linked conversation shows a stored initial request once and preserves later repeated replies',async()=>{
+  const f=fixture('SUPPORT_SUPERVISOR');await f.create();
+  const original={id:'original',authorId:f.ticket.customerId,authorName:'Test customer',authorRole:'CUSTOMER',body:f.ticket.message,createdAt:f.ticket.createdAt};
+  const messages=[{...original,id:'later',createdAt:new Date(original.createdAt.getTime()+1000)},original];
+  f.overrides.get(path.join(root,'src/lib/db.ts')).db.supportMessage.findMany=async()=>messages;
+  const {CaseDetail}=load('src/components/case-detail.tsx',f.overrides);
+  const html=renderToStaticMarkup(await CaseDetail({params:Promise.resolve({id:'case'}),searchParams:Promise.resolve({})}));
+  assert.doesNotMatch(html,/· Original request/);
+  assert.equal(html.split('Test customer · Customer').length-1,2);
+  assert.equal(messages.length,2);
+});
