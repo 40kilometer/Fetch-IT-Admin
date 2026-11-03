@@ -1,12 +1,12 @@
 "use client";
 import { useId, useRef, useState } from "react";
 import {useStaffDraft,DraftNotice} from "./staff-drafts";
-export function ConfirmDialog({ trigger, title, description, confirmLabel, onConfirm, reasonLabel, draftId="", danger = false, disabled = false }: { trigger: string; title: string; description: string; confirmLabel: string; onConfirm: (reason: string) => Promise<void>; reasonLabel?: string; draftId?:string; danger?: boolean; disabled?: boolean }) {
+export function ConfirmDialog({ trigger, title, description, confirmLabel, onConfirm, onOpen, reasonLabel, draftId="", danger = false, disabled = false }: { trigger: string; title: string; description: string; confirmLabel: string; onConfirm: (reason: string) => Promise<void>; onOpen?: () => void; reasonLabel?: string; draftId?:string; danger?: boolean; disabled?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null), id = useId(), pending = useRef(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [reason,setReason]=useState("");
   const draft=useStaffDraft(reasonLabel?draftId:"","",values=>setReason(values.reason??""),{baseline:{reason:""},labels:{reason:reasonLabel??"Decision reason"}});
-  return <><button type="button" className={`btn ${danger ? "btn-danger" : ""}`} disabled={disabled} onClick={() => { setError(""); dialog.current?.showModal(); }}>{trigger}</button><dialog ref={dialog} className="inbox-dialog confirm-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} onCancel={event => { if (pending.current) event.preventDefault(); }}><form onSubmit={async event => {
+  return <><button type="button" className={`btn ${danger ? "btn-danger" : ""}`} disabled={disabled} onClick={() => { setError(""); onOpen?.(); dialog.current?.showModal(); }}>{trigger}</button><dialog ref={dialog} className="inbox-dialog confirm-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} onCancel={event => { if (pending.current) event.preventDefault(); }}><form onSubmit={async event => {
     event.preventDefault(); if (pending.current) return;
     const form = event.currentTarget, reason = String(new FormData(form).get("reason") ?? "").trim();
     if (reasonLabel && !reason) { setError("Enter a reason before continuing."); return; }

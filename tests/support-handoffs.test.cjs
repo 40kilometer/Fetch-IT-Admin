@@ -33,9 +33,9 @@ function fixture(role='SUPPORT') {
   const cases=[],notes=[],audits=[],queries=[];
   const db={
     async $queryRaw(){return [];}, async $transaction(fn){return fn(db);},
-    supportTicket:{async findFirst({where}){return matches(ticket,where)?{...ticket}:null;},async findUnique(){return {...ticket};}},
+    supportTicket:{async findFirst({where}){return matches(ticket,where)?{...ticket}:null;},async findUnique(){return {...ticket};},async update({data}){Object.assign(ticket,data);return {...ticket};}},
     supportMessage:{async count(){return 1;},async findMany(){return [{id:'message',authorName:'Customer',authorRole:'CUSTOMER',body:'Linked public conversation',createdAt:new Date()}];}},
-    workflowCase:{async findFirst({where}){return cases.find(c=>matches(c,where))??null;},async create({data}){const record={id:'case',version:1,createdAt:new Date(),updatedAt:new Date(),assignedToId:null,...data};cases.push(record);return record;},async update({where,data}){const record=cases.find(c=>c.id===where.id);Object.assign(record,{...data,version:record.version+1});return {...record};},async count({where}){queries.push(where);return cases.filter(c=>matches(c,where)).length;},async findMany(input){queries.push(input);return cases.filter(c=>matches(c,input.where));}},
+    workflowCase:{async findFirst({where}){return cases.find(c=>matches(c,where))??null;},async findUnique({where}){const record=cases.find(c=>matches(c,where));return record?{...record}:null;},async create({data}){const record={id:'case',version:1,createdAt:new Date(),updatedAt:new Date(),assignedToId:null,...data};cases.push(record);return record;},async update({where,data}){const record=cases.find(c=>c.id===where.id);Object.assign(record,{...data,version:record.version+1});return {...record};},async count({where}){queries.push(where);return cases.filter(c=>matches(c,where)).length;},async findMany(input){queries.push(input);return cases.filter(c=>matches(c,input.where));}},
     workflowNote:{async create({data}){notes.push({id:'note',createdAt:new Date(),...data});return notes.at(-1);},async count({where}){return notes.filter(n=>matches(n,where)).length;},async findMany({where}){queries.push(where);return notes.filter(n=>matches(n,where));}},
     user:{async findFirst({where}){return matches({id:'reviewer',role:'SUPPORT',isBanned:false},where)?{id:'reviewer',role:'SUPPORT'}:null;},async findMany(){return [];},async findUnique(){return {name:'Reviewer'};}},
     booking:{async findUnique(){return {id:'booking',customerId:'customer',refCode:'FIT-TEST',type:'DELIVERY',status:'PENDING',totalFare:100,paymentMethod:'CASH',paymentStatus:'PENDING',pickupLabel:'Pickup',dropoffLabel:'Dropoff'};}},
@@ -146,4 +146,42 @@ test('linked conversation shows a stored initial request once and preserves late
   assert.doesNotMatch(html,/· Original request/);
   assert.equal(html.split('Test customer · Customer').length-1,2);
   assert.equal(messages.length,2);
+});
+
+async function alertFixture(role='ADMIN') {
+  const f=fixture();await f.create({kind:'SAFETY'});f.actor.role=role;f.ticket.isEmergency=true;
+  Object.assign(f.cases[0],{emergencyAt:new Date(),acknowledgedAt:null,subjectUserId:f.ticket.customerId});
+  return f;
+}
+test('Admin marks a passenger alert done with a private resolution and both records close',async()=>{
+  const f=await alertFixture();const response=await f.patch({action:'complete-alert',reason:'Called the passenger and confirmed the concern was handled.'});
+  assert.equal(response.status,200);assert.match((await response.json()).message,/No customer message was sent/);
+  assert.equal(f.cases[0].status,'RESOLVED');assert.equal(f.cases[0].assignedToId,'staff');assert(f.cases[0].acknowledgedAt);
+  assert.equal(f.ticket.status,'RESOLVED');assert.equal(f.notes.length,1);assert.match(f.notes[0].body,/Called the passenger/);
+  const audit=f.audits.find(a=>a.action==='CASE_ALERT_DONE');assert.equal(audit.actorId,'staff');assert.equal(audit.details.from,'OPEN');assert.equal(audit.details.to,'RESOLVED');assert.equal(audit.details.internal,true);
+  assert.equal(f.audits.filter(a=>a.action==='SUPPORT_RESOLVE').length,1);
+});
+test('Admin can finish an assigned or awaiting-decision alert without changing its reviewer or approving other actions',async()=>{
+  const f=await alertFixture();Object.assign(f.cases[0],{status:'AWAITING_ADMIN',assignedToId:'original-reviewer',acknowledgedAt:new Date(),recommendation:'Keep the prior findings.'});
+  assert.equal((await f.patch({action:'complete-alert'})).status,200);assert.equal(f.cases[0].assignedToId,'original-reviewer');assert.equal(f.cases[0].recommendation,'Keep the prior findings.');
+  assert.equal(f.cases[0].decision,undefined);assert.equal(f.cases[0].decidedById,undefined);
+});
+for(const role of ['SUPPORT','SUPPORT_SUPERVISOR','SAFETY','SUPERADMIN'])test(`${role} cannot mark alerts done through the Admin action`,async()=>{
+  const f=await alertFixture(role),before=f.audits.length;assert.equal((await f.patch({action:'complete-alert'})).status,403);
+  assert.equal(f.cases[0].status,'OPEN');assert.equal(f.ticket.status,'OPEN');assert.equal(f.notes.length,0);assert.equal(f.audits.length,before);
+});
+for(const change of ['normal-case','wrong-team','resolved','stale','missing-reason','long-reason','missing-link','not-emergency','wrong-customer','wrong-booking'])test(`Alert completion rejects ${change} without writes`,async()=>{
+  const f=await alertFixture(),body={action:'complete-alert'},before=f.audits.length;
+  if(change==='normal-case')f.cases[0].emergencyAt=null;if(change==='wrong-team')f.cases[0].kind='ESCALATION';if(change==='resolved')f.cases[0].status='RESOLVED';
+  if(change==='stale')body.version=0;if(change==='missing-reason')body.reason=' ';if(change==='long-reason')body.reason='x'.repeat(501);
+  if(change==='missing-link')f.cases[0].ticketId=null;if(change==='not-emergency')f.ticket.isEmergency=false;
+  if(change==='wrong-customer')f.ticket.customerId='someone-else';if(change==='wrong-booking')f.ticket.bookingId='another-booking';
+  assert.equal((await f.patch(body)).status,change.includes('reason')?400:409);assert.equal(f.ticket.status,'OPEN');assert.equal(f.notes.length,0);assert.equal(f.audits.length,before);assert.equal(f.cases[0].version,1);
+});
+test('Admin completion control appears only for active explicit Safety alerts',async()=>{
+  const f=await alertFixture(),module=load('src/components/case-detail.tsx',f.overrides),args={params:Promise.resolve({id:'case'}),searchParams:Promise.resolve({})};
+  const render=async()=>renderToStaticMarkup(await module.CaseDetail(args));let html=await render();
+  assert.match(html,/>Mark as done</);assert.match(html,/resolution is saved privately/);assert.doesNotMatch(html,/Request Admin decision/);
+  for(const change of [{emergencyAt:null},{status:'RESOLVED'},{kind:'ESCALATION'}]){Object.assign(f.cases[0],{emergencyAt:new Date(),status:'OPEN',kind:'SAFETY'},change);assert.doesNotMatch(await render(),/>Mark as done</);}
+  Object.assign(f.cases[0],{emergencyAt:new Date(),status:'OPEN',kind:'SAFETY'});f.actor.role='SAFETY';assert.doesNotMatch(await render(),/>Mark as done</);
 });

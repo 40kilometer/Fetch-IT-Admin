@@ -105,6 +105,25 @@ async function main(){try{
   const calledAt=new Date().toISOString();assert.equal((await update({version:2,action:'call-log',target:'customer',outcome:'NO_ANSWER',calledAt,note:'Retry after checking the conversation response.'})).status,200);
   assert.equal(await db.customerNotification.count(),before+1);assert.equal(await db.workflowNote.count({where:{caseId:'safety-contact'}}),1);assert.equal((await db.workflowCase.findUniqueOrThrow({where:{id:'safety-contact'}})).version,3);
  });
+ await check('Admin alert completion atomically closes the alert and emergency request, clears intake and rejects competing submissions',async()=>{
+  await db.supportTicket.create({data:{id:'emergency-ticket',customerId:'customer',category:'RIDER',priority:'URGENT',isEmergency:true,message:'URGENT SAFETY ALERT\nDisposable passenger safety request.'}});
+  await db.workflowCase.create({data:{id:'emergency-case',kind:'SAFETY',title:'Disposable passenger alert',summary:'Isolated completion test',priority:'URGENT',emergencyAt:new Date(),ticketId:'emergency-ticket',subjectUserId:'customer',createdById:'customer',createdByName:'Test Customer'}});
+  await db.staffNotice.create({data:{id:'emergency-notice',channel:'TEAM',recipientRole:'SAFETY',entityType:'CASE',entityId:'emergency-case',title:'Immediate safety review needed',detail:'Disposable alert',urgent:true}});
+  const {notificationFeed,readNotifications}=load('src/lib/staff-notifications.ts');
+  let feed=await notificationFeed(db,admin,'team');assert.equal(feed.items.find(n=>n.entityId==='emergency-case').completion.version,1);
+  assert.equal((await notificationFeed(db,safety,'team')).items.find(n=>n.entityId==='emergency-case').completion,undefined);
+  await readNotifications(db,admin,'team',['emergency-notice']);feed=await notificationFeed(db,admin,'team');assert.equal(feed.items.find(n=>n.entityId==='emergency-case').urgent,true,'Read is separate from done');
+  const update=body=>patchCase(request({action:'complete-alert',version:1,reason:'Contacted the passenger; concern handled and follow-up recorded.',...body}),{params:Promise.resolve({id:'emergency-case'})});
+  actor=safety;assert.equal((await update({})).status,403);actor=admin;assert.equal((await update({reason:''})).status,400);
+  const beforeMessages=await db.supportMessage.count(),beforeNotifications=await db.customerNotification.count();
+  const responses=await Promise.all([update({}),update({})]);assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
+  const done=await db.workflowCase.findUniqueOrThrow({where:{id:'emergency-case'}});assert.equal(done.status,'RESOLVED');assert.equal(done.version,2);assert.equal(done.assignedToId,admin.id);assert(done.acknowledgedAt);
+  assert.equal((await db.supportTicket.findUniqueOrThrow({where:{id:'emergency-ticket'}})).status,'RESOLVED');
+  assert.equal(await db.workflowNote.count({where:{caseId:'emergency-case'}}),1);assert.equal(await db.adminAudit.count({where:{entityId:'emergency-case',action:'CASE_ALERT_DONE'}}),1);
+  const audit=await db.adminAudit.findFirst({where:{entityId:'emergency-case',action:'CASE_ALERT_DONE'}});assert.equal(audit.details.from,'OPEN');assert.equal(audit.details.to,'RESOLVED');assert.equal(audit.actorId,admin.id);assert.match(audit.details.reason,/Contacted the passenger/);
+  assert.equal((await notificationFeed(db,admin,'team')).items.some(n=>n.entityId==='emergency-case'),false);assert.equal((await notificationFeed(db,safety,'team')).items.some(n=>n.entityId==='emergency-case'),false);
+  assert.equal(await db.supportMessage.count(),beforeMessages);assert.equal(await db.customerNotification.count(),beforeNotifications);
+ });
  assert.equal(await db.authIdentity.count(),0);assert.equal(await db.staffSession.count(),0);
  console.log(JSON.stringify({databaseWorkflowChecks:checks,outboundDelivery:false,liveDataWrites:false}));
 }finally{

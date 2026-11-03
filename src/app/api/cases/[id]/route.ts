@@ -4,10 +4,14 @@ import {staffRoute,StaffError,text} from '@/lib/staff-http';
 import {caseScope,hasPermission,canReviewCase,caseReviewerRoles} from '@/lib/staff-policy';
 import {safetyCaseWork} from '@/lib/safety-case-actions';
 import {schedulePushDelivery} from '@/lib/push-delivery';
+import {completeSafetyAlert} from '@/lib/safety-alert-completion';
 export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}) {
   const {id}=await params;
   return staffRoute(undefined,async(request,staff)=>{
     const body=await request.json();
+    if(body.action==='complete-alert'){
+      return NextResponse.json(await db.$transaction(tx=>completeSafetyAlert(tx,id,staff,body),{timeout:20000}));
+    }
     if(['reply','call-log'].includes(body.action)){
       const result=await db.$transaction(tx=>safetyCaseWork(tx,id,staff,body),{timeout:20000});
       if(body.action==='reply')schedulePushDelivery();

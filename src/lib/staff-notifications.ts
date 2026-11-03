@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 
 export type NoticeActor = { id: string; role: string };
 export type NoticeView = 'personal' | 'team' | 'general' | 'platform';
-export type Notice = { id: string; title: string; detail: string; at: string; href: string; read: boolean; urgent: boolean; entityType: string; entityId: string; safetyReview?: boolean; claim?: {kind:"support"|"case"|"application";revision:string;endpoint:string} };
+export type Notice = { id: string; title: string; detail: string; at: string; href: string; read: boolean; urgent: boolean; entityType: string; entityId: string; safetyReview?: boolean; completion?: {version:number}; claim?: {kind:"support"|"case"|"application";revision:string;endpoint:string} };
 
 export function noticeView(value: string | null, role: string): NoticeView {
   if (value === 'platform' && role === 'SUPERADMIN') return value;
@@ -26,10 +26,11 @@ export function noticeHref(entity: string, id: string) {
 // reassigned/restricted record cannot leak through an older persisted notice.
 export async function notificationFeed(db: PrismaClient, actor: NoticeActor, view: NoticeView, before?: string) {
   if (before && !Number.isFinite(Date.parse(before))) throw new Error('Invalid notification cursor.');
-  const rows = await db.$queryRaw<(Omit<Notice, 'at' | 'href'> & { createdAt: Date; claimKind: string | null; revision: string | null })[]>`
+  const rows = await db.$queryRaw<(Omit<Notice, 'at' | 'href'> & { createdAt: Date; claimKind: string | null; revision: string | null; completionVersion: number | null })[]>`
     SELECT * FROM (SELECT DISTINCT ON(n."entityType",n."entityId",CASE WHEN n."entityType"='SECURITY' THEN n.id ELSE '' END)
       n.id,n.title,n.detail,n."entityType",n."entityId",n."createdAt",(n.urgent AND (c.id IS NULL OR c.status<>'RESOLVED')) AS urgent,r."readAt" IS NOT NULL AS read,
       (n."entityType"='APPLICATION' OR n."entityType"='CASE' AND c.kind='SAFETY') AS "safetyReview",
+      CASE WHEN ${actor.role}='ADMIN' AND n."entityType"='CASE' AND c.kind='SAFETY' AND c."emergencyAt" IS NOT NULL AND c.status<>'RESOLVED' THEN c.version END AS "completionVersion",
       CASE WHEN n.channel='TEAM' AND n."entityType"='SUPPORT' AND t."assignedAdminId" IS NULL THEN 'support'
         WHEN n.channel='TEAM' AND n."entityType"='CASE' AND c."assignedToId" IS NULL AND c.status IN ('OPEN','IN_REVIEW') THEN 'case'
         WHEN n.channel='TEAM' AND n."entityType"='APPLICATION' AND a."assignedToId" IS NULL AND a.status IN ('SUBMITTED','IN_REVIEW') THEN 'application' END AS "claimKind",
@@ -79,6 +80,7 @@ export async function notificationFeed(db: PrismaClient, actor: NoticeActor, vie
     items.push({ id: row.id, title: row.title, detail: row.detail, at: row.createdAt.toISOString(),
       href: row.entityType === 'SECURITY' && actor.role === 'SUPERADMIN' ? '/dashboard/security' : noticeHref(row.entityType, row.entityId),
       read: row.read, urgent: row.urgent, entityType: row.entityType, entityId: row.entityId, safetyReview: row.safetyReview===true,
+      ...(actor.role==='ADMIN' && row.entityType==='CASE' && Number.isSafeInteger(row.completionVersion) && row.completionVersion!==null ? {completion:{version:row.completionVersion}} : {}),
       ...(row.claimKind && row.revision ? {claim:{kind:row.claimKind as "support"|"case"|"application",revision:row.claimKind==='support'?new Date(row.revision+'Z').toISOString():row.revision,endpoint:`/api/${row.claimKind==='support'?'support':row.claimKind==='case'?'cases':'rider-applications'}/${encodeURIComponent(row.entityId)}`}} : {}) });
   }
   return { items, checkedAt: new Date().toISOString() };

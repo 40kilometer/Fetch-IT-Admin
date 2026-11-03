@@ -3,6 +3,7 @@ import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 import type {Notice,NoticeView} from '@/lib/staff-notifications';
 import {useSafetyAlertSound} from './safety-alert-sound';
+import {SafetyAlertDone} from './safety-alert-done';
 type Packet={items:Notice[];checkedAt:string};
 type Props={actorId:string;role:string;renderLink:(item:Notice,children:ReactNode,onNavigate:()=>void)=>ReactNode};
 const labels:Record<NoticeView,string>={personal:'My alerts',team:'Team intake',general:'Operations',platform:'Platform alerts'};
@@ -13,6 +14,7 @@ export function NotificationInbox({actorId,role,renderLink}:Props){
  const [view,setView]=useState<NoticeView>(owner?'platform':'personal');
  const [packets,setPackets]=useState<Partial<Record<NoticeView,Packet>>>({});
  const [error,setError]=useState(''),[saving,setSaving]=useState(false),[retry,setRetry]=useState(0);
+ const [completionNotice,setCompletionNotice]=useState('');
  const personalUnread=(packets.personal?.items??[]).filter(item=>!item.read).length+(owner?(packets.platform?.items??[]).filter(item=>!item.read).length:0);
  const active=packets[view],unread=(active?.items??[]).filter(item=>!item.read).length;
  const urgent=Object.values(packets).flatMap(packet=>packet?.items??[]).filter(item=>item.urgent);
@@ -56,9 +58,10 @@ export function NotificationInbox({actorId,role,renderLink}:Props){
    <p>{view==='team'?'Shared work waiting for ownership or an eligible decision. Opening a report keeps the claim-or-view choice.':view==='general'?'Shared operational advisories and announcements.':view==='platform'?'Platform incidents requiring owner attention. Routine bookings remain in operational pages.':'Assignments, replies, review updates, and your account security.'}</p>
    <div className="inbox-tools"><button className="btn" disabled={saving||!unread} onClick={()=>void mark((active?.items??[]).filter(item=>!item.read).map(item=>item.id))}>{saving?'Saving…':'Mark this view as read'}</button><button className="btn" onClick={refresh}>Refresh</button></div>
    {error&&<p className="error-message" role="alert">{error}</p>}
+   {completionNotice&&<p className="success-message" role="status">{completionNotice}</p>}
    {!active&&!error&&<p role="status">Loading notifications…</p>}
    {active&&!active.items.length&&<p className="empty-state">No notifications in {labels[view].toLowerCase()}.</p>}
-   <ul className="inbox-list">{active?.items.map(item=><li key={item.id} className={item.read?'':'unread'}><div>{renderLink(item,<><strong>{item.urgent&&'Urgent · '}{item.title}</strong><span>{item.detail}</span><time dateTime={item.at}>{new Date(item.at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})}</time></>,()=>dialog.current?.close())}</div>{!item.read&&<button className="btn small" disabled={saving} onClick={()=>void mark([item.id])}>Mark as read</button>}</li>)}</ul>
+   <ul className="inbox-list">{active?.items.map(item=><li key={item.id} className={item.read?'':'unread'}><div>{renderLink(item,<><strong>{item.urgent&&'Urgent · '}{item.title}</strong><span>{item.detail}</span><time dateTime={item.at}>{new Date(item.at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})}</time></>,()=>dialog.current?.close())}</div><div className="row-actions">{role==='ADMIN'&&item.completion&&<SafetyAlertDone id={item.entityId} version={item.completion.version} onDone={()=>{setCompletionNotice('Safety alert marked as done. The resolution is saved in its history.');setPackets(current=>Object.fromEntries(Object.entries(current).map(([key,packet])=>[key,packet?{...packet,items:packet.items.filter(notice=>notice.entityType!==item.entityType||notice.entityId!==item.entityId)}:packet])));refresh();}}/>}{!item.read&&<button className="btn small" disabled={saving} onClick={()=>void mark([item.id])}>Mark as read</button>}</div></li>)}</ul>
    <p className="muted small">Read status follows your account across devices. Reading does not claim, acknowledge, approve, or resolve work. {active&&`Checked ${new Date(active.checkedAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila'})}.`}</p>
   </dialog>
  </>;
