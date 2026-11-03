@@ -23,22 +23,22 @@ export const teamForCaseKind = (kind: string) => STAFF_TEAMS.find(team => team.c
 export const teamHome = (team: StaffTeam) => `/dashboard/teams/${team.slug}`;
 export const teamReviews = (team: StaffTeam) => `/dashboard/cases?team=${team.slug}`;
 
-export type StaffNavLink = { href: string; label: string; icon: string; management?: boolean };
+export type StaffNavLink = { href: string; label: string; icon: string; management?: boolean; hidden?: boolean };
 export type StaffNavGroup = { label: string; team?: string; icon?: string; links: StaffNavLink[] };
 
 export function staffNavigation(role: string): StaffNavGroup[] {
   const admin = hasPermission(role, "operations");
   const groups: StaffNavGroup[] = admin ? [{ label: "Operations", links: [
-    { href: "/dashboard", label: "Overview", icon: "overview" },
+    { href: "/dashboard", label: "Overview", icon: "overview", hidden: true },
     { href: "/dashboard/bookings", label: "Bookings", icon: "bookings" },
     { href: "/dashboard/riders", label: "Riders", icon: "riders" },
     { href: "/dashboard/customers", label: "Customers", icon: "users" },
-    { href: "/dashboard/workspace", label: "My workspace", icon: "workspace" },
-    { href: "/dashboard/cases", label: "Reviews & escalations", icon: "cases" },
+    { href: "/dashboard/workspace", label: "My workspace", icon: "workspace", hidden: true },
+    { href: "/dashboard/cases", label: "Reviews & escalations", icon: "cases", hidden: true },
     { href: "/dashboard/finance", label: "Payment records", icon: "finance" },
   ] }] : [];
   for (const team of STAFF_TEAMS.filter(team => hasPermission(role, team.permission))) {
-    const links: StaffNavLink[] = [{ href: teamHome(team), label: "Overview", icon: "overview" }];
+    const links: StaffNavLink[] = [{ href: teamHome(team), label: "Overview", icon: "overview", hidden: admin }];
     if (team.slug === "customer-support") {
       links.push({ href: "/dashboard/support", label: "Support inbox", icon: "support" }, { href: "/dashboard/lookup", label: "Booking lookup", icon: "lookup" });
       if (hasPermission(role, "support.manage")) links.push({ href: "/dashboard/team", label: "Support workload", icon: "team" });

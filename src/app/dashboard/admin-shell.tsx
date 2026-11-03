@@ -16,6 +16,7 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
   const [open, setOpen] = useState(false), [refreshing, startTransition] = useTransition();
   const operations = hasPermission(admin.role, "operations");
   const groups = staffNavigation(admin.role), ownTeam = teamForRole(admin.role);
+  const homeHref = operations ? groups.flatMap(group => group.links).find(link => !link.hidden)?.href ?? "/dashboard/bookings" : ownTeam ? teamHome(ownTeam) : "/dashboard/workspace";
   const active = (href: string) => isStaffNavActive(href, pathname, { get: key => search.get(key) ?? (key === "team" && ownTeam ? ownTeam.slug : null) });
   const currentGroup = groups.find(group => group.links.some(link => active(link.href)));
   const currentLink = currentGroup?.links.find(link => active(link.href));
@@ -44,10 +45,11 @@ export function AdminShell({ admin, children }: { admin: { id: string; name: str
   }, [open]);
   return <StaffDraftAccount.Provider value={`${admin.id}:${admin.role}`}><StaffDraftGuard/><div className="admin-shell">{open && <button className="sidebar-backdrop" aria-label="Close navigation" tabIndex={-1} onClick={() => setOpen(false)} />}
     <aside ref={sidebar} className={`admin-sidebar ${open ? "is-open" : ""}`} id="admin-navigation" role={open ? "dialog" : undefined} aria-modal={open || undefined} aria-label="Staff navigation">
-      <div className="sidebar-brand-row"><Link href={operations ? "/dashboard" : ownTeam ? teamHome(ownTeam) : "/dashboard/workspace"} className="admin-brand" onClick={() => setOpen(false)}><img src="/fetch-logo-final.png" width="42" height="42" alt="" /><span>Fetch-It<small>STAFF PORTAL</small></span></Link>{open && <button className="btn icon-button mobile-menu" onClick={() => setOpen(false)} aria-label="Close navigation">×</button>}</div>
+      <div className="sidebar-brand-row"><Link href={homeHref} className="admin-brand" onClick={() => setOpen(false)}><img src="/fetch-logo-final.png" width="42" height="42" alt="" /><span>Fetch-It<small>STAFF PORTAL</small></span></Link>{open && <button className="btn icon-button mobile-menu" onClick={() => setOpen(false)} aria-label="Close navigation">×</button>}</div>
 
       <nav aria-label="Staff tools">{groups.map(group => {
-        const links = group.links.map((link, index) => <Link href={link.href} key={link.href} onClick={() => setOpen(false)} className={`sidebar-link ${active(link.href) ? "active" : ""} ${link.management && !group.links[index - 1]?.management ? "nav-management-start" : ""}`} aria-current={active(link.href) ? "page" : undefined}><AdminIcon name={link.icon} />{link.label}</Link>);
+        const visibleLinks = group.links.filter(link => !link.hidden);
+        const links = visibleLinks.map((link, index) => <Link href={link.href} key={link.href} onClick={() => setOpen(false)} className={`sidebar-link ${active(link.href) ? "active" : ""} ${link.management && !visibleLinks[index - 1]?.management ? "nav-management-start" : ""}`} aria-current={active(link.href) ? "page" : undefined}><AdminIcon name={link.icon} />{link.label}</Link>);
         return <details className="nav-team" key={group.label} open={!operations || currentGroup === group}><summary className={`nav-team-heading ${currentGroup === group ? "is-active" : ""}`}><AdminIcon name={group.icon ?? (group.label === "Operations" ? "overview" : "reports")} /><span>{group.label}</span><span className="nav-chevron" aria-hidden="true">⌄</span></summary><div className="nav-team-links">{links}</div></details>;
       })}</nav>
       <details className="sidebar-account"><summary><span className="account-role">{ROLE_LABELS[admin.role]}</span><span className="muted small">{admin.email}</span></summary><p>{admin.name}</p><Link className="sidebar-link" href="/dashboard/account" onClick={() => setOpen(false)}><AdminIcon name="account" />My account</Link><LogoutButton /></details>
