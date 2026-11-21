@@ -1,4 +1,5 @@
 import { dispatchSelect, freshPresenceWhere } from '@/lib/matching-policy';
+import { riderOccupancyWhere } from '@/lib/rider-occupancy';
 import { requireAdminPage } from "@/lib/admin-access";
 import { humanize } from "@/lib/admin-ui";
 import { BookingControls } from "./booking-controls";
@@ -38,7 +39,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
   const isRide = booking.type === "RIDE";
   const demo = isDemoPayment(booking.paymentMethod);
   const canAssign = ["PENDING", "MATCHED", "ACCEPTED"].includes(booking.status) && !booking.pickedUpAt && (demo ? booking.paymentStatus === "PAID" : !booking.customerPaidAt && !booking.riderReceivedAt && !["PAID", "REFUNDED"].includes(booking.paymentStatus)) && (!booking.scheduledAt || booking.scheduledAt <= new Date());
-  const riders = canAssign ? await db.user.findMany({ where: { role: "RIDER", isBanned: false, id: { not: booking.riderId ?? "" }, riderProfile: { vehicleClass: booking.vehicleClass }, riderPresence: freshPresenceWhere(), bookingsAsRider: { none: { status: { in: ["MATCHED", "ACCEPTED", "PICKED_UP", "IN_TRANSIT"] } } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
+  const riders = canAssign ? await db.user.findMany({ where: { role: "RIDER", isBanned: false, id: { not: booking.riderId ?? "" }, riderProfile: { vehicleClass: booking.vehicleClass }, riderPresence: freshPresenceWhere(), bookingsAsRider: { none: riderOccupancyWhere() } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : [];
 
   return (
     <div>
