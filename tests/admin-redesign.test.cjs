@@ -25,11 +25,38 @@ test('awaiting-reply queue uses the dashboard predicate across open and in-progr
  const db={supportTicket:{fields:{lastAdminReplyAt:field},count:async({where})=>{queries.push(where);return 25},findMany:async({where})=>{queries.push(where);return []}}};
  const Page=load('src/components/review-pages.tsx',{'@/lib/db':{db},'@/lib/staff-access':{requireStaffPage:async()=>({id:'admin',role:'ADMIN'})}}).SupportPage;
  const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({unanswered:'1',q:'Alex'})}));
- assert.deepEqual(queries[0],queries[1]);assert.deepEqual(queries[0].AND[1].status.in,['OPEN','IN_PROGRESS']);assert.equal(queries[0].AND[1].OR[1].lastCustomerMessageAt.gt,field);assert.match(html,/Awaiting staff reply/);assert.match(html,/25 requests/);assert.match(html,/unanswered=1/);assert.match(html,/q=Alex/);
+ assert.deepEqual(queries[0],queries[1]);assert.deepEqual(queries[0].AND[1].status.in,['OPEN','IN_PROGRESS']);assert.equal(queries[0].AND[1].OR[1].lastCustomerMessageAt.gt,field);assert.match(html,/Awaiting reply/);assert.match(html,/25 requests/);assert.match(html,/view=awaiting/);assert.match(html,/q=Alex/);
 });
 test('Admin decision queue retains permissions and exposes owner and next-action columns',async()=>{
  let where;const db={workflowCase:{count:async args=>{where=args.where;return 0},findMany:async()=>[]},user:{findMany:async()=>[]}};
  const Page=load('src/components/review-pages.tsx',{'@/lib/db':{db},'@/lib/staff-access':{requireStaffPage:async()=>({id:'admin',role:'ADMIN'})}}).CasesPage;
  const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({view:'decisions',team:'safety'})}));
  assert.equal(where.AND[1].status,'AWAITING_ADMIN');assert(where.AND.some(condition=>condition.kind==='SAFETY'));assert.match(html,/>Owner</);assert.match(html,/>Next action</);assert.match(html,/Needs my decision/);
+});
+
+test('task views retain staff scope and never widen an agent to other assigned conversations',async()=>{
+ for(const role of ['ADMIN','SUPPORT','SUPPORT_SUPERVISOR'])for(const view of ['unassigned','mine','awaiting','escalated','resolved','all']){
+  let where,caseWhere;const field={modelName:'SupportTicket',name:'lastAdminReplyAt'};
+  const db={supportTicket:{fields:{lastAdminReplyAt:field},count:async args=>{where=args.where;return 21},findMany:async()=>[]},workflowCase:{findMany:async args=>{caseWhere=args.where;return [{ticketId:'linked-ticket'}]}}};
+  const actor={id:'agent',role};const Page=load('src/components/review-pages.tsx',{'@/lib/db':{db},'@/lib/staff-access':{requireStaffPage:async()=>actor}}).SupportPage;
+  const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({view,q:'Alex',page:'2'})}));
+  const scope=load('src/lib/staff-policy.ts').supportScope(actor);assert.deepEqual(where.AND[0],scope);assert.match(html,new RegExp('view='+view));assert.match(html,/q=Alex/);
+  if(view==='mine')assert.equal(where.AND[1].assignedAdminId,'agent');
+  if(view==='unassigned')assert.equal(where.AND[1].assignedAdminId,null);
+  if(view==='awaiting')assert.equal(where.AND[1].OR[1].lastCustomerMessageAt.gt,field);
+  if(view==='escalated'){assert.deepEqual(caseWhere.AND[0],load('src/lib/staff-policy.ts').caseScope(actor));assert.deepEqual(where.AND.at(-1).id.in,['linked-ticket']);}
+ }
+});
+test('case return links preserve team filters and reject external or unrelated destinations',()=>{
+ const {caseQueuePath,staffLandingPath,bookingStatusLabel}=load('src/lib/staff-workspace-ui.ts');
+ assert.equal(caseQueuePath('SAFETY','/dashboard/cases?team=safety&view=team&q=Alex&page=2'),'/dashboard/cases?team=safety&view=team&q=Alex&page=2');
+ for(const input of ['https://evil.invalid/dashboard/cases?team=safety','//evil.invalid/dashboard/cases','/dashboard/bookings','/dashboard/cases?team=customer-support'])assert.equal(caseQueuePath('SAFETY',input),'/dashboard/cases?team=safety');
+ assert.equal(staffLandingPath('ADMIN'),'/dashboard/bookings');assert.equal(staffLandingPath('SAFETY'),'/dashboard/teams/safety');
+ assert.equal(bookingStatusLabel('DELIVERED','RIDE'),'Completed');assert.equal(bookingStatusLabel('DELIVERED','DELIVERY'),'Delivered');
+});
+test('staff workload deep links show the selected owner instead of intersecting with unassigned work',async()=>{
+ let where;const db={supportTicket:{count:async args=>{where=args.where;return 1},findMany:async()=>[]}};
+ const Page=load('src/components/review-pages.tsx',{'@/lib/db':{db},'@/lib/staff-access':{requireStaffPage:async()=>({id:'admin',role:'ADMIN'})}}).SupportPage;
+ const html=renderToStaticMarkup(await Page({searchParams:Promise.resolve({assigned:'selected-staff'})}));
+ assert(where.AND.some(part=>part.assignedAdminId==='selected-staff'));assert(!where.AND.some(part=>part.assignedAdminId===null));assert.match(html,/All requests/);
 });

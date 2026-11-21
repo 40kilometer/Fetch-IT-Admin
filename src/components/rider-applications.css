@@ -2,6 +2,15 @@
 .oa-force-approval{border-top:1px solid #e1e6de;margin-top:22px;padding-top:20px}.oa fieldset{border:1px solid #e1e6de;border-radius:10px;margin:16px 0;padding:12px}.oa legend{font-size:13px;font-weight:600}
 
 .oa [hidden]{display:none!important}
+.oa .workspace-panel>fieldset,.oa [role="tabpanel"]>fieldset{border:0;padding:0;margin:0;min-width:0}
+.oa .oa-schedule-form{padding-top:12px}
+.oa .oa-schedule-form h2{margin-bottom:12px}
+.oa .oa-schedule-form .oa-toolbar{margin-bottom:0}
+.oa .oa-workflow-summary{margin:12px 0}
+.oa .oa-toolbar:empty{display:none}
+.oa .oa-list .oa-card.oa-row{padding:12px 16px;margin:0;border-radius:0;border-width:0 0 1px;box-shadow:none}
+.oa .oa-list{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.oa .oa-list .oa-row:last-child{border-bottom:0}
 .oa h1{font-size:28px;letter-spacing:-.6px}
 .oa-muted{color:var(--text-muted)}
 .oa-heading>div{min-width:0}

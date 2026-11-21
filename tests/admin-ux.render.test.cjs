@@ -20,7 +20,7 @@ function loader(db) {
       if (name === "@/lib/staff-access") return { requireStaffPage: async () => staff };
       if (name === "@/lib/staff-notifications") return { refreshOperationalSignals:async()=>{} };
       if (name === "next/link") return { __esModule: true, default: ({ href, children, ...props }) => React.createElement("a", { href, ...props }, children) };
-      if (name === "next/navigation") return { notFound() { throw Error("not found"); }, useRouter:()=>({refresh(){},push(){}}) };
+      if (name === "next/navigation") return { notFound() { throw Error("not found"); }, useRouter:()=>({refresh(){},push(){},replace(){}}),usePathname:()=>"/dashboard/cases/case",useSearchParams:()=>new URLSearchParams() };
       if (name.endsWith("action-form")) return { ActionForm: ({ label }) => React.createElement("button", null, label) };
       if (name.endsWith("reply-form")) return { ReplyForm: () => null };
       if (name.endsWith("ban-button")) return { BanButton: () => null };

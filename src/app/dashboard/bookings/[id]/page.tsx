@@ -60,7 +60,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
             {BOOKING_TYPE_LABEL[booking.type] ?? booking.type}
           </span>
         </div>
-        <StatusBadge status={booking.status} />
+        <StatusBadge status={booking.status} type={booking.type} />
       </div>
 
       <BookingTimeline booking={booking} />

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { createAdminSessionToken, getAdminSession, setAdminSessionCookie, verifyAdminSessionToken } from "@/lib/session";
 import { isStaffRole } from "@/lib/staff-policy";
+import { staffLandingPath } from '@/lib/staff-workspace-ui';
 import {assertRuntimeAccess} from '@/lib/runtime-access';
 import { clearDemoCookie, revokeDemoSessions } from "@/lib/staff-demo";
 
@@ -41,7 +42,7 @@ async function handlePOST(req: NextRequest) {
     await clearDemoCookie();
     await setAdminSessionCookie(token);
 
-    return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } });
+    return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email }, home: staffLandingPath(user.role) });
   } catch (err) {
     if (err instanceof RateLimitError) throw err;
     console.error("[admin login] error", { code: safeErrorCode(err), stage });

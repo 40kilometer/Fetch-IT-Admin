@@ -131,7 +131,7 @@ test('Admin and Safety UI expose direct approval and accessible audit history wi
     const load = loader({ react, 'next/link': { __esModule: true, default: 'a' }, '@/hooks/use-local-demo': { useLocalDemo: () => ({ enabled: false }) }, '@/hooks/use-visible-poll': { useVisiblePoll() {} } });
     const Component = load('src/components/rider-applications.tsx').RiderApplications;
     const html = renderToStaticMarkup(React.createElement(Component, { id: f.app.id }));
-    assert(html.includes('Approve &amp; send invitation with PDF')); assert(!html.includes('Recommend approval'));
+    assert(html.includes('Save schedule &amp; send invitation')); assert(!html.includes('Recommend approval'));
     assert(html.includes('aria-label="Application stages"')); assert(html.includes('History · 0')); assert(html.includes('Application audit history')); assert(html.includes('role="tabpanel"'));
     assert.equal(html.includes('Reopen &amp; revoke service access'), role === 'ADMIN');
   }

@@ -1,4 +1,5 @@
 import "./globals.css";
+import '@/components/admin-workspace.css';
 
 export const metadata = {
   title: "Fetch Staff Portal",

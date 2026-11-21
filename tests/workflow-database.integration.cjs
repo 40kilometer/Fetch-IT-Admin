@@ -110,7 +110,7 @@ async function main(){try{
   await db.workflowCase.create({data:{id:'emergency-case',kind:'SAFETY',title:'Disposable passenger alert',summary:'Isolated completion test',priority:'URGENT',emergencyAt:new Date(),ticketId:'emergency-ticket',subjectUserId:'customer',createdById:'customer',createdByName:'Test Customer'}});
   await db.staffNotice.create({data:{id:'emergency-notice',channel:'TEAM',recipientRole:'SAFETY',entityType:'CASE',entityId:'emergency-case',title:'Immediate safety review needed',detail:'Disposable alert',urgent:true}});
   const {notificationFeed,readNotifications}=load('src/lib/staff-notifications.ts');
-  let feed=await notificationFeed(db,admin,'team');assert.equal(feed.items.find(n=>n.entityId==='emergency-case').completion.version,1);
+  let feed=await notificationFeed(db,admin,'team');assert.equal(feed.items.find(n=>n.entityId==='emergency-case').completion.version,1);assert.equal(feed.items.find(n=>n.entityId==='emergency-case').needsOwner,true);
   assert.equal((await notificationFeed(db,safety,'team')).items.find(n=>n.entityId==='emergency-case').completion,undefined);
   await readNotifications(db,admin,'team',['emergency-notice']);feed=await notificationFeed(db,admin,'team');assert.equal(feed.items.find(n=>n.entityId==='emergency-case').urgent,true,'Read is separate from done');
   const update=body=>patchCase(request({action:'complete-alert',version:1,reason:'Contacted the passenger; concern handled and follow-up recorded.',...body}),{params:Promise.resolve({id:'emergency-case'})});
@@ -123,6 +123,12 @@ async function main(){try{
   const audit=await db.adminAudit.findFirst({where:{entityId:'emergency-case',action:'CASE_ALERT_DONE'}});assert.equal(audit.details.from,'OPEN');assert.equal(audit.details.to,'RESOLVED');assert.equal(audit.actorId,admin.id);assert.match(audit.details.reason,/Contacted the passenger/);
   assert.equal((await notificationFeed(db,admin,'team')).items.some(n=>n.entityId==='emergency-case'),false);assert.equal((await notificationFeed(db,safety,'team')).items.some(n=>n.entityId==='emergency-case'),false);
   assert.equal(await db.supportMessage.count(),beforeMessages);assert.equal(await db.customerNotification.count(),beforeNotifications);
+ });
+ await check('acknowledged alert feed identifies its current reviewer instead of asking for ownership',async()=>{
+  await db.workflowCase.update({where:{id:'safety-contact'},data:{emergencyAt:new Date(),acknowledgedAt:new Date()}});
+  await db.staffNotice.create({data:{id:'acknowledged-alert-notice',channel:'PERSONAL',recipientId:admin.id,entityType:'CASE',entityId:'safety-contact',title:'Acknowledged alert',detail:'Disposable scoped alert',urgent:true}});
+  const {notificationFeed}=load('src/lib/staff-notifications.ts');const notice=(await notificationFeed(db,admin,'personal')).items.find(n=>n.entityId==='safety-contact');
+  assert.equal(notice.needsOwner,false);assert.equal(notice.reviewerName,safety.name);assert.equal(notice.urgent,true);
  });
  assert.equal(await db.authIdentity.count(),0);assert.equal(await db.staffSession.count(),0);
  console.log(JSON.stringify({databaseWorkflowChecks:checks,outboundDelivery:false,liveDataWrites:false}));
